@@ -1,0 +1,57 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials*.json
+secrets/
+
+# Raw radar data and dumps
+data/raw/
+*.dump
+*.iq
+*.bin
+
+# Build output and caches
+build/
+dist/
+out/
+__pycache__/
+*.pyc
+node_modules/
+.venv/
+venv/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python tooling
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Recordings, logs and anything that may contain real site data
+data/
+recordings/
+*.log
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.csv
+!tests/fixtures/**/*.csv
+
+# Local documents that should never be published
+*.docx
+*.pdf
+*.xlsx

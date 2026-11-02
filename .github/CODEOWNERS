@@ -1,0 +1,9 @@
+# The maintainer reviews every change.
+*                        @Mankirk1
+
+# Repository security and automation.
+/.github/                @Mankirk1
+/SECURITY.md             @Mankirk1
+/.gitleaks.toml          @Mankirk1
+/.pre-commit-config.yaml @Mankirk1
+/.env.example            @Mankirk1
