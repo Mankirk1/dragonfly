@@ -128,6 +128,8 @@ class TrackerOutput:
     aim_xy: tuple[float, float] | None
     """Where to point: the primary's predicted position at t + lead_s. In HOLD
     this is the last position. None in SEARCH and TENTATIVE."""
+    since_hit_s: float = float("nan")
+    """Seconds since the primary track was last measured (for the interlock)."""
 
 
 class Tracker:
@@ -305,5 +307,10 @@ class Tracker:
             return TrackerOutput(t, state, None, reports, None)
         lead = 0.0 if prim.state is TrackState.HOLD else self.cfg.lead_s
         return TrackerOutput(
-            t, SystemState(prim.state.value), prim.id, reports, prim.kf.predicted_position(lead)
+            t,
+            SystemState(prim.state.value),
+            prim.id,
+            reports,
+            prim.kf.predicted_position(lead),
+            t - prim.last_hit_t,
         )
