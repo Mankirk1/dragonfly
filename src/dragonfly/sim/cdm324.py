@@ -55,7 +55,12 @@ WALKER_PARTS: tuple[Scatterer, ...] = (
     Scatterer(0.12, 0.6, 0.5),  # left arm
     Scatterer(0.12, 0.6, 0.0),  # right arm
 )
-RIGID_PARTS: tuple[Scatterer, ...] = (Scatterer(1.0, 0.0, 0.0),)
+# Rigid objects: one body plus a weak wheel return whose speed sweeps from 0
+# to twice the body speed as the wheel turns (ASSUMPTION: small wheels).
+RIGID_PARTS: tuple[Scatterer, ...] = (
+    Scatterer(1.0, 0.0, 0.0),
+    Scatterer(0.08, 1.0, 0.0, 5),
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,8 @@ class CDM324Params:
     lowpass_hz: float = 1200.0  # report section 7.1
     adc_bits: int = 12
     min_range_m: float = 0.3
+    limb_swing_scale: float = 1.0  # per-subject gait variation
+    limb_amplitude_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -116,11 +123,11 @@ class CDM324Simulator:
         out = np.zeros_like(t)
         start_phase = self.rng.uniform(0, 2 * np.pi, size=len(parts))
         for part, phi0 in zip(parts, start_phase, strict=True):
-            v_part = v_r + part.swing * speed * aspect * np.sin(
-                stride_phase + 2 * np.pi * part.phase
-            )
+            swing = part.swing * (p.limb_swing_scale if part.amplitude < 1.0 else 1.0)
+            amp = part.amplitude * (p.limb_amplitude_scale if part.amplitude < 1.0 else 1.0)
+            v_part = v_r + swing * speed * aspect * np.sin(stride_phase + 2 * np.pi * part.phase)
             phase = 2 * np.pi * k * np.cumsum(v_part) / p.fs_hz + phi0
-            out += part.amplitude * np.cos(phase)
+            out += amp * np.cos(phase)
         return out * gain * present, v_r * present
 
     def record(self, duration_s: float | None = None) -> CDM324Recording:

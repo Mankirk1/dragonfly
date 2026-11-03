@@ -8,6 +8,8 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - RD-03D frame decoder, encoder and stream parser
 - `dragonfly-log` recorder for raw and decoded radar output
 - RD-03D simulator with scenarios S1 to S6 and the T1 grid (`dragonfly-sim`)
+- Micro-Doppler classifier pipeline: 8 spectral features, synthetic session-grouped dataset, grouped cross-validation over kNN/SVM/random forest/MLP, held-out session test with clip-level bootstrap CI, majority-vote smoothing, `dragonfly-classify-sim` report
+- Simulator: wheel micro-Doppler for rigid objects and per-subject gait variation
 - ESP32 firmware skeleton (PlatformIO, FreeRTOS radar and 50 Hz control tasks, watchdog, laser driven LOW at reset)
 - Portable C++ core: RD-03D parser, laser interlock and aim solver, with host tests under sanitizers and Python/C++ parity tests
 - Laser safety interlock: arm-switch re-arm on start-up and after faults, latched faults, lock/coast, range, pan and height-cap rules; 100% branch coverage enforced in CI
