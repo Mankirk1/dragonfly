@@ -16,14 +16,19 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering",
 ]
-dependencies = []
+dependencies = ["numpy>=1.26"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "pre-commit>=3.7"]
+dev = ["pytest>=8", "hypothesis>=6.100", "mypy>=1.10", "ruff>=0.6", "pre-commit>=3.7"]
+hardware = ["pyserial>=3.5"]
 
 [project.urls]
 Repository = "https://github.com/Mankirk1/dragonfly"
 Issues = "https://github.com/Mankirk1/dragonfly/issues"
+
+[project.scripts]
+dragonfly-log = "dragonfly.io.logger:main"
+dragonfly-sim = "dragonfly.sim.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dragonfly"]
@@ -41,3 +46,12 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "N"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["serial"]
+ignore_missing_imports = true
