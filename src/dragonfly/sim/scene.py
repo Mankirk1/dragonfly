@@ -11,6 +11,11 @@ import bisect
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
+import numpy.typing as npt
+
+FloatArray = npt.NDArray[np.float64]
+
 
 class TargetKind(Enum):
     WALKER = "walker"
@@ -66,6 +71,25 @@ class PathTarget:
         vx = (x1 - x0) / (t1 - t0)
         vy = (y1 - y0) / (t1 - t0)
         return State(x0 + frac * (x1 - x0), y0 + frac * (y1 - y0), vx, vy)
+
+    def sample(
+        self, t: FloatArray
+    ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
+        """Vectorised state at many times: (present, x, y, vx, vy).
+
+        ``present`` is 1.0 where the target exists and 0.0 elsewhere; the
+        other arrays hold the clamped end positions and zero velocity there.
+        """
+        wp = np.asarray(self.waypoints, dtype=np.float64)
+        tw, xw, yw = wp[:, 0], wp[:, 1], wp[:, 2]
+        x = np.interp(t, tw, xw)
+        y = np.interp(t, tw, yw)
+        seg = np.clip(np.searchsorted(tw, t, side="right") - 1, 0, len(tw) - 2)
+        dt = tw[seg + 1] - tw[seg]
+        present = ((t >= tw[0]) & (t <= tw[-1])).astype(np.float64)
+        vx = (xw[seg + 1] - xw[seg]) / dt * present
+        vy = (yw[seg + 1] - yw[seg]) / dt * present
+        return present, x, y, vx, vy
 
 
 @dataclass(frozen=True)
