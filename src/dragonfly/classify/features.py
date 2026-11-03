@@ -61,8 +61,8 @@ def spectrogram(samples: FloatArray, cfg: DopplerConfig) -> tuple[FloatArray, Fl
     if len(frames) == 0:
         return np.zeros((0, 0)), np.zeros(0)
     frames = (frames - frames.mean(axis=1, keepdims=True)) * win
-    p = np.abs(np.fft.rfft(frames, axis=1)) ** 2
-    f = np.fft.rfftfreq(cfg.n_fft, 1.0 / cfg.fs_hz)
+    p: FloatArray = (np.abs(np.fft.rfft(frames, axis=1)) ** 2).astype(np.float64)
+    f: FloatArray = np.fft.rfftfreq(cfg.n_fft, 1.0 / cfg.fs_hz).astype(np.float64)
     band = (f >= cfg.min_hz) & (f <= cfg.max_hz)
     return p[:, band], f[band]
 
