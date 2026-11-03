@@ -55,3 +55,6 @@ recordings/
 *.docx
 *.pdf
 *.xlsx
+
+# PlatformIO
+.pio/

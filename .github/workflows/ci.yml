@@ -46,3 +46,40 @@ jobs:
       - run: pytest --cov --cov-report=term
       - name: Safety-critical modules need 100% branch coverage
         run: coverage report --include="*/control/interlock.py" --fail-under=100
+
+  firmware-host:
+    name: Firmware core (host tests, sanitizers, parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Static analysis
+        run: cppcheck --enable=warning,performance,portability --error-exitcode=1 --inline-suppr --std=c++17 firmware/lib firmware/tools firmware/test
+      - name: Build with address and undefined-behaviour sanitizers
+        run: |
+          cmake -S firmware -B build/firmware -DSANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/firmware
+      - run: ctest --test-dir build/firmware --output-on-failure
+      - run: python -m pip install -e ".[dev]"
+      - name: Python and C++ give the same answers
+        env:
+          DRAGONFLY_CORE_CLI: build/firmware/core_cli
+        run: pytest tests/test_parity.py -v
+
+  firmware-esp32:
+    name: Firmware (ESP32 build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "platformio==6.1.18"
+      - run: pio run -d firmware
