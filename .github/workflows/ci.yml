@@ -43,4 +43,6 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: pytest
+      - run: pytest --cov --cov-report=term
+      - name: Safety-critical modules need 100% branch coverage
+        run: coverage report --include="*/control/interlock.py" --fail-under=100
