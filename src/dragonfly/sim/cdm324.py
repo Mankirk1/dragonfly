@@ -38,16 +38,18 @@ HZ_PER_MPS = 2.0 * F0_HZ / C  # ~160.9 Hz per m/s
 @dataclass(frozen=True)
 class Scatterer:
     """One body part: reflectivity, speed-swing amplitude (fraction of body
-    speed) and phase (in cycles of the stride)."""
+    speed), phase (in cycles of the stride) and the harmonic of the stride
+    rate at which it swings (2 = once per step)."""
 
     amplitude: float
     swing: float
     phase: float
+    harmonic: int = 1
 
 
 # ASSUMPTION: simplified gait. Legs swing hardest, arms less, in antiphase.
 WALKER_PARTS: tuple[Scatterer, ...] = (
-    Scatterer(1.00, 0.0, 0.0),  # torso
+    Scatterer(1.00, 0.15, 0.0, 2),  # torso: speeds up and slows down each step
     Scatterer(0.30, 1.2, 0.0),  # left leg
     Scatterer(0.30, 1.2, 0.5),  # right leg
     Scatterer(0.12, 0.6, 0.5),  # left arm
