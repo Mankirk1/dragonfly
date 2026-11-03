@@ -19,8 +19,9 @@ classifiers = [
 dependencies = ["numpy>=1.26", "scipy>=1.11"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov>=5", "hypothesis>=6.100", "mypy>=1.10", "ruff>=0.6", "pre-commit>=3.7"]
+dev = ["scikit-learn>=1.4", "pytest>=8", "pytest-cov>=5", "hypothesis>=6.100", "mypy>=1.10", "ruff>=0.6", "pre-commit>=3.7"]
 hardware = ["pyserial>=3.5"]
+ml = ["scikit-learn>=1.4"]
 
 [project.urls]
 Repository = "https://github.com/Mankirk1/dragonfly"
@@ -29,6 +30,7 @@ Issues = "https://github.com/Mankirk1/dragonfly/issues"
 [project.scripts]
 dragonfly-log = "dragonfly.io.logger:main"
 dragonfly-sim = "dragonfly.sim.cli:main"
+dragonfly-classify-sim = "dragonfly.classify.report:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dragonfly"]
@@ -61,5 +63,5 @@ python_version = "3.11"
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["serial", "scipy", "scipy.*"]
+module = ["serial", "scipy", "scipy.*", "sklearn", "sklearn.*"]
 ignore_missing_imports = true
