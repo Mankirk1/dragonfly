@@ -1,5 +1,8 @@
 # systemd unit for running the bot on a Linux VM.
 # Copy to /etc/systemd/system/, then: sudo systemctl enable --now dragonfly-taskbot
+#
+# The bot runs as an unprivileged user that can read its code and settings but not
+# change them, and is sandboxed so a bug can't touch the rest of the machine.
 [Unit]
 Description=Dragonfly Discord task bot
 After=network-online.target
@@ -7,11 +10,39 @@ Wants=network-online.target
 
 [Service]
 User=taskbot
+Group=taskbot
 WorkingDirectory=/opt/dragonfly/tools/discord-bot
-# .env in WorkingDirectory holds the settings; keep it chmod 600
+# .env holds settings only (no passwords or tokens); owned by root, readable by taskbot
 ExecStart=/opt/dragonfly/tools/discord-bot/.venv/bin/python -m taskbot
 Restart=always
 RestartSec=10
+
+# Sandboxing
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

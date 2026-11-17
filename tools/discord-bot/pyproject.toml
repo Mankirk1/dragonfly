@@ -11,6 +11,8 @@ license = "Apache-2.0"
 dependencies = [
   "discord.py>=2.4,<3",
   "gspread>=6.1,<7",
+  "google-auth>=2.22,<3",
+  "requests>=2.31,<3",
   "tzdata>=2024.1",
 ]
 

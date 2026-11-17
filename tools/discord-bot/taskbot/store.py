@@ -60,7 +60,9 @@ class UnsafeWriteError(RuntimeError):
 def open_spreadsheet(settings: Settings) -> Any:
     import gspread  # imported here so the pure modules can be tested without it
 
-    client = gspread.service_account_from_dict(settings.google_credentials())
+    from .gcp import sheets_credentials
+
+    client = gspread.authorize(sheets_credentials(settings))
     return client.open_by_key(settings.sheet_id)
 
 
