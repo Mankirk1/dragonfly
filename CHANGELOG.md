@@ -12,3 +12,4 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Velocity scoring against ground truth (B2, T4)
 - CDM324 Doppler channel simulator: walker micro-Doppler, rigid targets, mains hum, analog band-pass and 12-bit ADC
 - Initial project structure, documentation, CI and security tooling
+- Discord task bot (`tools/discord-bot`) that hands out weekly tasks from the Radar Detection Timeline Sheet and records sign-offs back to it

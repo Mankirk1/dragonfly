@@ -38,7 +38,7 @@ Turn on GitHub's email privacy so your personal address doesn't end up in commit
 
 - Python 3.11+, formatted and linted with [ruff](https://docs.astral.sh/ruff/)
 - Type hints on public functions
-- Tests for new behaviour and bug fixes, using synthetic data only
+- Tests for new behaviour and bug fixes, using synthetic data only. Use made-up names (Ana, Ben…) in tests, fixtures, docs and commit messages, never a real person's name
 - Configuration through environment variables, documented in `.env.example`
 
 ## Reporting bugs and requesting features
