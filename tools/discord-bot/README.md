@@ -55,7 +55,7 @@ The bot only ever edits these cells, and every edit is checked first:
 - **Text typed in Discord** can't become a formula.
 - Every edit is a single cell, so nothing next to it can be cleared.
 
-When a check fails the bot changes nothing and tells the person why in Discord. For a first test, set `TASKBOT_READ_ONLY=true`: the bot reads the Sheet and posts as normal, but only logs the edits it would have made.
+When a check fails the bot changes nothing and tells the person why in Discord. For a first test, set `TASKBOT_READ_ONLY=true`: the bot reads the Sheet and posts as normal, but only logs the edits it would have made to the plan. It still creates and fills its own TEAM tab, so `/link` and DMs work during the test.
 
 Other layouts work too: column and tab names are detected from common headers (Week, Task, Owner, Status, Due…) and can be set in `.env`.
 

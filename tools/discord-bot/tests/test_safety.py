@@ -148,7 +148,7 @@ def test_no_columns_added_over_existing_data():
     assert ws.rows[1] == ["1", "a", "side note"]
 
 
-def test_read_only_mode_writes_nothing_anywhere():
+def test_read_only_mode_leaves_the_plan_alone_but_allows_linking():
     b, store = setup(read_only=True)
     before = snapshot(b)
     table = store.load_tasks()
@@ -157,8 +157,14 @@ def test_read_only_mode_writes_nothing_anywhere():
     store.update_task("X02", {"status": "Done", "progress": "x"}, expected_title="Task 2")
     store.log(date(2026, 11, 17), None, table.find("X02"), "Signed off", "Ana", "Done")
     store.fill_checkin(1, "Done: X02", "Still open: X03")
-    assert changed_cells(before, b) == set()
-    assert [s.title for s in b.sheets] == list(before)
+    store.assign_many({"X05": ["Ben"]}, {"X05": "Task 5"})
+    store.link_member("Ana", 42)
+    # Only the bot's own TEAM tab was added; every tab of the plan is untouched.
+    assert changed_cells(before, b) == {
+        ("TEAM", r, c) for r, c in [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (4, 1)]
+    }
+    assert [s.title for s in b.sheets] == [*before, "TEAM"]
+    assert {m.name: m.discord_id for m in store.load_team()}["Ana"] == 42
 
 
 def test_every_write_is_a_single_cell():
