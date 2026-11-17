@@ -46,7 +46,8 @@ All configuration comes from environment variables. See [`.env.example`](.env.ex
 ## Project layout
 
 ```
-src/dragonfly/   library code
+src/dragonfly/   Python reference algorithms, simulator and tools
+firmware/        ESP32 firmware and its portable C++ core (see firmware/README.md)
 tests/           automated tests
 docs/            design notes and documentation
 .github/         CI, templates and repository automation

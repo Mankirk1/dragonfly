@@ -1,0 +1,6 @@
+{
+  "name": "dragonfly_core",
+  "version": "0.1.0",
+  "description": "Portable Dragonfly algorithms: no hardware calls, no heap allocation.",
+  "build": { "flags": ["-std=gnu++17"] }
+}
