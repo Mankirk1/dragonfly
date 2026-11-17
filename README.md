@@ -29,6 +29,16 @@ cp .env.example .env             # then fill in your own local values
 pytest
 ```
 
+## Tools
+
+| Command | What it does |
+|---|---|
+| `dragonfly-log --port /dev/ttyUSB0 --out data/t1/session01` | Records RD-03D output to a raw `.bin` file and a decoded `.csv` file. Needs `pip install -e ".[hardware]"`. |
+| `dragonfly-log --replay data/t1/session01.bin --out data/t1/redo` | Decodes a saved raw recording again. |
+| `dragonfly-sim --scenario S1 --out data/sim/s1` | Simulates an RD-03D session (scenarios S1 to S6) with ground truth, for testing without hardware. |
+
+The simulator's noise and detection settings are starting guesses from the datasheet. They are calibrated once real recordings exist, and simulated results are never a substitute for measured ones.
+
 ## Configuration
 
 All configuration comes from environment variables. See [`.env.example`](.env.example) for the full list. Never commit a real `.env` file, credentials, station addresses or recorded data from real sites.
