@@ -37,7 +37,7 @@ def test_sign_off_writes_the_right_row_and_keeps_checkboxes():
         ["T2", "1", "b", "", "", "", "Ben"],
     ]
     store, ws, _ = make(rows)
-    store.update_task("T2", {"status": "Done", "signed_off_by": "=Ben", "signed_off_at": "x"})
+    store.update_task("T2", {"status": "Done", "signed_off_by": "=Ben", "signed_off_at": "x"}, "b")
     store.update_task("t1", {"status": "Done"})
     assert ws.rows[2][3:6] == ["Done", "'=Ben", "x"]
     assert ws.rows[1][3] == "TRUE"
@@ -46,7 +46,7 @@ def test_sign_off_writes_the_right_row_and_keeps_checkboxes():
 def test_assign_many_only_fills_empty_cells():
     rows = [["ID", "Week", "Task", "Assigned To"], ["T1", "1", "a", ""], ["T2", "1", "b", "Ana"]]
     store, ws, _ = make(rows, auto_add_columns=False)
-    store.assign_many({"T1": ["Ben"], "T2": ["Ben"]})
+    store.assign_many({"T1": ["Ben"], "T2": ["Ben"]}, {"T1": "a", "T2": "b"})
     assert ws.rows[1][3] == "Ben" and ws.rows[2][3] == "Ana"
 
 

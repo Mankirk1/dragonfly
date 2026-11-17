@@ -16,7 +16,7 @@ from discord.ext import tasks
 from .config import Settings
 from .planner import WeeklyPlan, build_plan, current_week
 from .sheet import Member, Task, TaskTable, is_everyone, match_member, parse_date, people_for
-from .store import Calendar, SheetStore
+from .store import Calendar, SheetStore, UnsafeWriteError
 
 log = logging.getLogger(__name__)
 
@@ -294,22 +294,27 @@ class TaskBot(discord.Client):
             changes = {"status": status, "last_updated": today}
             if done:
                 changes |= {"signed_off_at": today, "signed_off_by": by}
-            elif task.is_done(self.settings.done_values):
-                changes |= {"signed_off_at": "", "signed_off_by": ""}
             if note:
                 changes["progress"] = f"{note} ({by}, {self.today():%d %b})"
-            await asyncio.to_thread(self.store.update_task, task.id, changes)
+            try:
+                await asyncio.to_thread(self.store.update_task, task.id, changes, task.title)
+            except UnsafeWriteError as exc:
+                log.warning("Refused a write to %s: %s", task.id, exc)
+                return None, f"⚠️ I didn't change the Sheet: {exc}"
             action = "Signed off in Discord" if done else f"Status set to {status} in Discord"
-            await asyncio.to_thread(
-                self.store.log,
-                self.today(),
-                self.week_start(cal),
-                task,
-                action,
-                by,
-                LOG_STATUS.get(status.casefold(), status),
-                note,
-            )
+            try:
+                await asyncio.to_thread(
+                    self.store.log,
+                    self.today(),
+                    self.week_start(cal),
+                    task,
+                    action,
+                    by,
+                    LOG_STATUS.get(status.casefold(), status),
+                    note,
+                )
+            except (UnsafeWriteError, LookupError) as exc:
+                log.warning("Couldn't add a WORK LOG row for %s: %s", task.id, exc)
             self._cache = None
             task.status = status
         return task, ""
@@ -352,11 +357,15 @@ class TaskBot(discord.Client):
                     f"{member.display_name} isn't linked to a name in the TEAM tab yet. "
                     "They can run `/link` first."
                 )
-            await asyncio.to_thread(
-                self.store.update_task,
-                task.id,
-                {"assignee": m.name, "last_updated": self.today().isoformat()},
-            )
+            try:
+                await asyncio.to_thread(
+                    self.store.update_task,
+                    task.id,
+                    {"assignee": m.name, "last_updated": self.today().isoformat()},
+                    task.title,
+                )
+            except UnsafeWriteError as exc:
+                return f"⚠️ I didn't change the Sheet: {exc}"
             await asyncio.to_thread(
                 self.store.log,
                 self.today(),
@@ -379,7 +388,8 @@ class TaskBot(discord.Client):
         async with self.lock:
             table, team, cal = await self.load()
             plan = self.plan(table, team, cal, week)
-            await asyncio.to_thread(self.store.assign_many, plan.new_assignments)
+            titles = {t.id: t.title for t in table.tasks}
+            await asyncio.to_thread(self.store.assign_many, plan.new_assignments, titles)
             for task_id, names in plan.new_assignments.items():
                 t = table.find(task_id)
                 if t is not None:

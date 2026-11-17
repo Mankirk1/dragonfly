@@ -42,6 +42,21 @@ The Sheet stays the source of truth. Edit it by hand whenever you like, for exam
 
 The bot adds one new tab, **TEAM**, with `Name` and `Discord ID`. It's seeded with the owner names from the plan, and `/link` fills in the IDs. It doesn't add or move any columns on the TASK BOARD.
 
+### Keeping the Sheet safe
+
+The bot only ever edits these cells, and every edit is checked first:
+
+- **On the TASK BOARD**, only Status, Owner(s), What changed / actual progress, Last updated and Completion date, and only on the one task's row. It never edits the ID, task name, dates, priority or any other column, and never adds, deletes, moves or sorts rows or columns.
+- **Before each edit** it re-reads the Sheet, finds the task by its ID, and stops if that ID is on more than one row or the row no longer holds the same task (for example if someone moved rows in the meantime).
+- **It never overwrites a formula**, never blanks a filled cell, and only writes Status values from the dropdown. Progress notes are added after what's there, never replacing it.
+- **After each edit** it re-reads the row to check it still belongs to the same task.
+- **New WORK LOG rows** go below everything else, skipping rows that only look empty because of a formula. Old entries are never touched.
+- **WEEKLY CHECK-IN** cells are only filled when they're blank.
+- **Text typed in Discord** can't become a formula.
+- Every edit is a single cell, so nothing next to it can be cleared.
+
+When a check fails the bot changes nothing and tells the person why in Discord. For a first test, set `TASKBOT_READ_ONLY=true`: the bot reads the Sheet and posts as normal, but only logs the edits it would have made.
+
 Other layouts work too: column and tab names are detected from common headers (Week, Task, Owner, Status, Due…) and can be set in `.env`.
 
 ## Setup
@@ -76,7 +91,7 @@ mkdir -p secrets && mv ~/Downloads/your-key.json secrets/service-account.json
 python -m taskbot
 ```
 
-Then in Discord each groupmate runs `/link`, and you run `/plan` once to see this week's post.
+Then in Discord each groupmate runs `/link`, and you run `/plan` once to see this week's post. Tip: do the first run with `TASKBOT_READ_ONLY=true` and check the log before letting it write.
 
 The bot reads which week it is from the WEEKLY CHECK-IN tab. If that tab ever goes away, set `TASKBOT_PROJECT_START` to the first day of week 1.
 

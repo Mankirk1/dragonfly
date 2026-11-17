@@ -83,6 +83,7 @@ class Settings:
     status_values: tuple[str, ...] = DEFAULT_STATUS_VALUES
     closed_values: tuple[str, ...] = CLOSED_VALUES
     auto_add_columns: bool = True
+    read_only: bool = False  # log what would be written instead of writing
     columns: Columns = Columns()
 
     @classmethod
@@ -146,6 +147,7 @@ class Settings:
             status_values=tuple(v.strip() for v in get("STATUS_VALUES").split(",") if v.strip())
             or DEFAULT_STATUS_VALUES,
             auto_add_columns=get("AUTO_ADD_COLUMNS", "true").lower() in ("1", "true", "yes"),
+            read_only=get("READ_ONLY", "false").lower() in ("1", "true", "yes"),
             columns=Columns(
                 id=get("COL_ID"),
                 week=get("COL_WEEK"),
