@@ -60,6 +60,7 @@ class Columns:
 @dataclass(frozen=True)
 class Settings:
     discord_token: str = field(default="", repr=False)
+    discord_token_secret: str = ""  # Secret Manager version name; preferred over a token
     google_credentials_file: str = ""
     google_credentials_json: str = field(default="", repr=False)
     sheet_id: str = ""
@@ -122,6 +123,7 @@ class Settings:
         reminder = get("REMINDER_DAY", "thu")
         return cls(
             discord_token=get("DISCORD_TOKEN"),
+            discord_token_secret=get("DISCORD_TOKEN_SECRET"),
             google_credentials_file=get("GOOGLE_CREDENTIALS_FILE"),
             google_credentials_json=get("GOOGLE_CREDENTIALS_JSON"),
             sheet_id=_sheet_id(get("SHEET_ID")),
@@ -165,23 +167,28 @@ class Settings:
         )
 
     def validate(self) -> None:
-        """Check the settings the running bot can't do without."""
+        """Check the settings the running bot can't do without.
+
+        Google credentials are optional: without them the bot uses the machine's own
+        identity (the Google Cloud VM's attached service account).
+        """
         missing = [
             name
             for name, value in (
-                ("DISCORD_TOKEN", self.discord_token),
+                (
+                    "DISCORD_TOKEN_SECRET or DISCORD_TOKEN",
+                    self.discord_token_secret or self.discord_token,
+                ),
                 ("SHEET_ID", self.sheet_id),
                 ("CHANNEL_ID", self.channel_id),
             )
             if not value
         ]
-        if not (self.google_credentials_file or self.google_credentials_json):
-            missing.append("GOOGLE_CREDENTIALS_FILE or GOOGLE_CREDENTIALS_JSON")
         if missing:
             raise ConfigError("Missing settings: " + ", ".join(PREFIX + m for m in missing))
 
     def google_credentials(self) -> dict:
-        """The service account key as a dict."""
+        """A service account key as a dict (only when one is configured)."""
         if self.google_credentials_json:
             return json.loads(self.google_credentials_json)
         with open(self.google_credentials_file, encoding="utf-8") as fh:

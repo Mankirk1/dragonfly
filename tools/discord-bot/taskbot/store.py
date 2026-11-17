@@ -60,7 +60,9 @@ class UnsafeWriteError(RuntimeError):
 def open_spreadsheet(settings: Settings) -> Any:
     import gspread  # imported here so the pure modules can be tested without it
 
-    client = gspread.service_account_from_dict(settings.google_credentials())
+    from .gcp import sheets_credentials
+
+    client = gspread.authorize(sheets_credentials(settings))
     return client.open_by_key(settings.sheet_id)
 
 
@@ -92,17 +94,22 @@ class SheetStore:
                 return ws
         return None
 
-    def _tab(self, title: str, headers: list[str] | None = None) -> Any:
+    def _tab(self, title: str, headers: list[str] | None = None, own: bool = False) -> Any:
+        """Find a tab, creating it with ``headers`` if it's missing.
+
+        ``own`` marks the bot's own TEAM tab, which read-only mode still lets it create
+        and edit, so people can /link while the plan itself is left alone.
+        """
         ws = self._find_tab(title)
         if ws is not None:
             return ws
         if headers is None:
             raise LookupError(f'No tab called "{title}"')
-        log.info("Creating the %s tab", title)
-        if self.settings.read_only:
+        if self.settings.read_only and not own:
             raise UnsafeWriteError(f'Read-only: would create a "{title}" tab')
+        log.info("Creating the %s tab", title)
         ws = self.book.add_worksheet(title=title, rows=100, cols=len(headers))
-        self._write(ws, [(1, c + 1, h) for c, h in enumerate(headers)], raw=True)
+        self._write(ws, [(1, c + 1, h) for c, h in enumerate(headers)], raw=True, own=own)
         return ws
 
     def _tasks_ws(self) -> Any:
@@ -123,11 +130,13 @@ class SheetStore:
     # Every write goes through _write. It sends single cells only (never ranges that
     # could clear neighbours), and in read-only mode it only logs what it would do.
 
-    def _write(self, ws: Any, cells: list[tuple[int, int, str]], raw: bool = False) -> None:
+    def _write(
+        self, ws: Any, cells: list[tuple[int, int, str]], raw: bool = False, own: bool = False
+    ) -> None:
         """Write (row, col, value) cells, 1-based."""
         if not cells:
             return
-        if self.settings.read_only:
+        if self.settings.read_only and not own:
             for row, col, value in cells:
                 log.info("Read-only: would write %r to %s!%s", value, ws.title, _a1(row, col))
             return
@@ -150,7 +159,7 @@ class SheetStore:
         typed = formulas[col - 1] if col <= len(formulas) else ""
         return not str(shown).strip() and not str(typed).strip()
 
-    def _append(self, ws: Any, values: list[str]) -> None:
+    def _append(self, ws: Any, values: list[str], own: bool = False) -> None:
         """Write a new row below everything else, never over an existing row."""
         existing = ws.get_all_values()
         row = len(existing) + 1
@@ -160,14 +169,14 @@ class SheetStore:
             row += 1
         else:
             raise UnsafeWriteError(f"Couldn't find an empty row in {ws.title}")
-        if self.settings.read_only:
+        if self.settings.read_only and not own:
             log.info("Read-only: would add row %d to %s: %r", row, ws.title, values)
             return
         if row > ws.row_count:
             ws.add_rows(row - ws.row_count + 20)
         if len(values) > ws.col_count:
             ws.add_cols(len(values) - ws.col_count)
-        self._write(ws, [(row, c + 1, v) for c, v in enumerate(values) if v != ""])
+        self._write(ws, [(row, c + 1, v) for c, v in enumerate(values) if v != ""], own=own)
 
     # -- calendar ---------------------------------------------------------------
 
@@ -363,28 +372,24 @@ class SheetStore:
     def load_team(self, seed_names: list[str] | None = None) -> list[Member]:
         """Read the Team tab, creating it from the names in the plan if it's missing."""
         ws = self._find_tab(self.settings.team_tab)
-        if ws is None and self.settings.read_only:
-            names = sorted({n for n in seed_names or [] if not is_everyone(n)})
-            log.info("Read-only: would create a %s tab for %s", self.settings.team_tab, names)
-            return [Member(row=i + 2, name=n, discord_id=None) for i, n in enumerate(names)]
         if ws is None:
-            ws = self._tab(self.settings.team_tab, TEAM_HEADERS)
+            ws = self._tab(self.settings.team_tab, TEAM_HEADERS, own=True)
             names = sorted({n for n in seed_names or [] if not is_everyone(n)})
-            self._write(ws, [(i + 2, 1, safe_cell(n)) for i, n in enumerate(names)])
+            self._write(ws, [(i + 2, 1, safe_cell(n)) for i, n in enumerate(names)], own=True)
         return parse_team(ws.get_all_values())
 
     def link_member(self, name: str, discord_id: int) -> Member:
-        ws = self._tab(self.settings.team_tab, TEAM_HEADERS)
+        ws = self._tab(self.settings.team_tab, TEAM_HEADERS, own=True)
         members = parse_team(ws.get_all_values())
         # The TEAM tab is the bot's own, so it may move a Discord ID between names here.
         for m in members:
             if m.discord_id == discord_id and m.name.casefold() != name.casefold():
-                self._write(ws, [(m.row, 2, "")], raw=True)
+                self._write(ws, [(m.row, 2, "")], raw=True, own=True)
         for m in members:
             if m.name.casefold() == name.casefold():
-                self._write(ws, [(m.row, 2, str(discord_id))], raw=True)
+                self._write(ws, [(m.row, 2, str(discord_id))], raw=True, own=True)
                 return Member(row=m.row, name=m.name, discord_id=discord_id)
-        self._append(ws, [safe_cell(name), str(discord_id)])
+        self._append(ws, [safe_cell(name), str(discord_id)], own=True)
         return Member(row=len(members) + 2, name=name, discord_id=discord_id)
 
     # -- log --------------------------------------------------------------------

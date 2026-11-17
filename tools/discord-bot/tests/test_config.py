@@ -39,4 +39,4 @@ def test_bad_values_are_explained():
 
 
 def test_token_is_not_in_repr():
-    assert "secret" not in repr(Settings(discord_token="secret"))
+    assert "tok-not-shown" not in repr(Settings(discord_token="tok-not-shown"))
