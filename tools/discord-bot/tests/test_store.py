@@ -1,7 +1,8 @@
 from datetime import date
 
+import pytest
 from taskbot.config import Settings
-from taskbot.store import SheetStore
+from taskbot.store import SheetStore, UnsafeWriteError
 
 from .fakes import FakeBook, FakeWorksheet
 
@@ -56,10 +57,23 @@ def test_team_tab_is_created_and_linked():
     assert [m.name for m in team] == ["Ana", "Ben"]
     store.link_member("ben", 42)
     store.link_member("Cy", 7)
-    store.link_member("Ana", 42)  # 42 moves from Ben to Ana
+    store.link_member("Ana", 42, admin=True)  # an admin moves 42 from Ben to Ana
     team = {m.name: m.discord_id for m in store.load_team()}
     assert team == {"Ana": 42, "Ben": None, "Cy": 7}
     assert book.sheets[1].title == "TEAM"
+
+
+def test_nobody_can_take_over_someone_elses_name():
+    store, _, book = make([["Week", "Task"]])
+    store.load_team(["Ana", "Ben"])
+    store.link_member("Ana", 42)
+    store.link_member("ana", 42)  # linking again to your own name is fine
+    with pytest.raises(UnsafeWriteError, match="already linked to another"):
+        store.link_member("Ana", 7)
+    with pytest.raises(UnsafeWriteError, match="already linked to Ana"):
+        store.link_member("Ben", 42)
+    team = {m.name: m.discord_id for m in store.load_team()}
+    assert team == {"Ana": 42, "Ben": None}
 
 
 def test_log_creates_a_work_log_when_missing():

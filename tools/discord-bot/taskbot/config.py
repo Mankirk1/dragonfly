@@ -85,6 +85,9 @@ class Settings:
     closed_values: tuple[str, ...] = CLOSED_VALUES
     auto_add_columns: bool = True
     read_only: bool = False  # log what would be written instead of writing
+    admin_role: str = ""  # a Discord role name or ID that counts as admin, besides Manage Server
+    alert_user_id: int = 0  # who to DM when the Sheet can't be reached; 0: the app's owner
+    gate_notice_days: int = 2  # heads-up this many days before each milestone; 0: off
     columns: Columns = Columns()
 
     @classmethod
@@ -150,6 +153,9 @@ class Settings:
             or DEFAULT_STATUS_VALUES,
             auto_add_columns=get("AUTO_ADD_COLUMNS", "true").lower() in ("1", "true", "yes"),
             read_only=get("READ_ONLY", "false").lower() in ("1", "true", "yes"),
+            admin_role=get("ADMIN_ROLE"),
+            alert_user_id=get_int("ALERT_USER_ID"),
+            gate_notice_days=max(0, get_int("GATE_NOTICE_DAYS", 2)),
             columns=Columns(
                 id=get("COL_ID"),
                 week=get("COL_WEEK"),

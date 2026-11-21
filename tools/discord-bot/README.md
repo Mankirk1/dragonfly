@@ -10,8 +10,11 @@ A Discord bot that runs the team's plan from the **Radar Detection Timeline** Go
   Both summaries are built only from what's in the Sheet.
 
   Each person gets a DM with their own list and ✅ buttons. Tasks owned by "All" go to everyone.
+  Each task in a DM also shows its "Expected output" (what done means) and "Next action" from the plan.
 - **Every Wednesday** it DMs a reminder of what each person still has open.
-- **Signing off** a task (the ✅ button or `/done`) sets its Status to Done, fills in Completion date and Last updated, adds your note to "What changed / actual progress", and adds a new row to the WORK LOG. Nothing in the log is ever overwritten.
+- **Two days before each milestone** it posts a heads-up with what's still open and due by then (`TASKBOT_GATE_NOTICE_DAYS`, 0 turns it off).
+- **Signing off** a task (the ✅ button or `/done`) asks what was done and for an optional evidence link. It then sets Status to Done, fills in Completion date and Last updated, adds the note to "What changed / actual progress", and adds a WORK LOG row with what was done in "What was actually done" and the link in "Outcome / evidence link". Nothing in the log is ever overwritten.
+- **Undo:** the sign-off reply has an Undo button for 10 minutes. It puts the old Status back, takes back the Completion date and the progress note the sign-off added (only if they still hold exactly what the bot wrote), and logs the undo.
 - `/status` sets In progress, Blocked or Postponed the same way. Blocked and postponed tasks are announced so the team sees them.
 - At the start of each week it fills in last week's "What we actually completed" and "Work moved / new week" in WEEKLY CHECK-IN, but only if those cells are still blank.
 
@@ -21,14 +24,24 @@ The Sheet stays the source of truth. Edit it by hand whenever you like, for exam
 
 | Command | What it does |
 | --- | --- |
-| `/link name` | Connect your Discord account to your name in the plan. Everyone does this once. |
+| `/help` | What the bot does and how to use it. |
+| `/link name [member]` | Connect your Discord account to your name in the plan. Everyone does this once. Admins can link someone else with `member`. |
 | `/tasks [member]` | Your open tasks (or someone else's), with sign-off buttons. |
 | `/week [number]` | Everything scheduled in a week, its focus, and who has what. |
-| `/done task [note]` | Mark a task Done. Type part of the ID or name to search. The note goes into the progress column and the WORK LOG. |
+| `/done task [note] [link]` | Mark a task Done. Type part of the ID or name to search. The note and evidence link go into the progress column and the WORK LOG. |
 | `/status task status [note]` | Set Not started, In progress, Blocked, Postponed, Done or Cancelled. |
 | `/assign task member` | Change a task's owner. They get a DM. |
 | `/progress` | Done/total grouped by target finish week, with late weeks flagged. |
-| `/plan [week]` | Post and hand out a week's tasks now (needs Manage Server). |
+| `/plan [week]` | Post and hand out a week's tasks now (admins only). |
+
+### Who can change what
+
+- **Signing off, `/status` and `/assign`** work on tasks you own, tasks owned by "All", and tasks with no owner yet. Anyone else gets a "⛔ belongs to…" reply and nothing changes.
+- **Admins** can do anything. An admin is anyone with **Manage Server** on the Discord server, or the role named in `TASKBOT_ADMIN_ROLE`.
+- **`/link`** can't take over a name: once a name is linked, or once you're linked, only an admin can change it. That stops anyone signing off someone else's tasks as them.
+- **Undo** only works for the person who signed the task off.
+
+[GUIDE.md](GUIDE.md) is a one-page version of this for groupmates, to pin in Discord.
 
 ## How it reads the Sheet
 
@@ -41,11 +54,12 @@ The Sheet stays the source of truth. Edit it by hand whenever you like, for exam
 | Owner(s) | Who gets the task. `Ana + Ben` is two people; `All` is everyone. |
 | Target start / Target finish | Which weeks the task is scheduled in, and when it counts as late |
 | Status | Not started / In progress / Blocked / Postponed / Done / Cancelled. Cancelled tasks are left out. |
-| Priority | Critical tasks are flagged |
+| Priority | Critical tasks are flagged and come first in "Focus for this week" |
+| Expected output, Next action | Shown under each task in DMs and `/tasks` (read only) |
 | What changed / actual progress | Notes from `/done` and `/status` are added here |
 | Last updated, Completion date | Set when a task changes or is signed off |
 
-**WEEKLY CHECK-IN** sets the week numbers (W01 starts 14 Nov 2026) and each week's focus. **MILESTONES** gives the "next gate" line. **WORK LOG** gets one new row per sign-off, status change or owner change, filled in as Date, Week beginning, Member, Related task ID, the task, what was done, and Status / result.
+**WEEKLY CHECK-IN** sets the week numbers (W01 starts 14 Nov 2026) and each week's focus. **MILESTONES** gives the "next gate" line. **WORK LOG** gets one new row per sign-off, undo, status change or owner change, filled in as Date, Week beginning, Member, Related task ID, the task, what was done, the evidence link, and Status / result.
 
 The bot adds one new tab, **TEAM**, with `Name` and `Discord ID`. It's seeded with the owner names from the plan, and `/link` fills in the IDs. It doesn't add or move any columns on the TASK BOARD.
 
@@ -55,11 +69,11 @@ The bot only ever edits these cells, and every edit is checked first:
 
 - **On the TASK BOARD**, only Status, Owner(s), What changed / actual progress, Last updated and Completion date, and only on the one task's row. It never edits the ID, task name, dates, priority or any other column, and never adds, deletes, moves or sorts rows or columns.
 - **Before each edit** it re-reads the Sheet, finds the task by its ID, and stops if that ID is on more than one row or the row no longer holds the same task (for example if someone moved rows in the meantime).
-- **It never overwrites a formula**, never blanks a filled cell, and only writes Status values from the dropdown. Progress notes are added after what's there, never replacing it.
+- **It never overwrites a formula**, never blanks a filled cell, and only writes Status values from the dropdown. The one exception is Undo, which takes back the Completion date and the sign-off's progress note only if they still hold exactly what the bot wrote, and only while the task is still Done. Earlier notes, and anything edited or added by hand since, are kept. Progress notes are otherwise added after what's there, never replacing it.
 - **After each edit** it re-reads the row to check it still belongs to the same task.
 - **New WORK LOG rows** go below everything else, skipping rows that only look empty because of a formula. Old entries are never touched.
 - **WEEKLY CHECK-IN** cells are only filled when they're blank.
-- **Text typed in Discord** can't become a formula.
+- **Text typed in Discord** can't become a formula, and evidence links must be a single `http(s)://` link.
 - Every edit is a single cell, so nothing next to it can be cleared.
 
 When a check fails the bot changes nothing and tells the person why in Discord. For a first test, set `TASKBOT_READ_ONLY=true`: the bot reads the Sheet and posts as normal, but only logs the edits it would have made to the plan. It still creates and fills its own TEAM tab, so `/link` and DMs work during the test.
@@ -180,12 +194,22 @@ sudo apt-get update && sudo apt-get install -y python3-venv git
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin taskbot
 sudo git clone https://github.com/Mankirk1/dragonfly.git /opt/dragonfly
 cd /opt/dragonfly/tools/discord-bot
-sudo python3 -m venv .venv && sudo .venv/bin/pip install -r requirements.txt
+sudo python3 -m venv .venv
+sudo .venv/bin/pip install --require-hashes --only-binary=:all: -r requirements.lock
 sudo cp .env.example .env
 sudo nano .env
 ```
 
-The code stays owned by root, so the bot can read it but can't change it.
+The code stays owned by root, so the bot can read it but can't change it. `requirements.lock` pins every package to an exact version and checksum, so pip refuses anything that's been tampered with, and `--only-binary` means no package's install script runs as root.
+
+**Turn on automatic security updates** for the VM's own software (Debian usually has this on already; these lines make sure):
+
+```bash
+sudo apt-get install -y unattended-upgrades
+printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+  | sudo tee /etc/apt/apt.conf.d/20auto-upgrades
+apt-config dump APT::Periodic::Unattended-Upgrade   # should print "1"
+```
 
 **Fill in `.env`.**
 
@@ -232,9 +256,15 @@ sudo systemctl restart dragonfly-taskbot
 - **Update the bot:**
 
   ```bash
-  cd /opt/dragonfly && sudo git pull && sudo systemctl restart dragonfly-taskbot
+  cd /opt/dragonfly && sudo git pull
+  cd tools/discord-bot
+  sudo .venv/bin/pip install --require-hashes --only-binary=:all: -r requirements.lock
+  sudo systemctl restart dragonfly-taskbot
   ```
 
+  The pip line only changes anything when `requirements.lock` has changed.
+- **Stop it:** `sudo systemctl stop dragonfly-taskbot`, and `start` to bring it back. A stopped bot starts again when the VM reboots unless you also run `sudo systemctl disable dragonfly-taskbot`.
+- **Alerts:** if the bot can't reach the Sheet for 30 minutes it DMs the Discord app's owner once, and again when it's back. Set `TASKBOT_ALERT_USER_ID` to send these to someone else.
 - **Change the Discord token** (if it leaks, or just now and then):
   1. Discord → **Bot** → **Reset Token**. The old token stops working at once.
   2. In Cloud Shell, store the new one:
@@ -249,6 +279,20 @@ sudo systemctl restart dragonfly-taskbot
 - **Turn off the bot's Sheet access** at any time: remove the `taskbot@…` address from the Sheet's **Share** list.
 - **Week numbering:** the bot reads which week it is from the WEEKLY CHECK-IN tab. If that tab ever goes away, set `TASKBOT_PROJECT_START` to the first day of week 1.
 
+### Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| The bot shows offline in Discord | On the VM: `sudo systemctl status dragonfly-taskbot --no-pager`. If it isn't **active (running)**, read why with `sudo journalctl -u dragonfly-taskbot -n 50 --no-pager -o cat`. |
+| `Config problem: …` in the log | A setting in `.env` is missing or wrong; the message names it. Fix it, then restart. |
+| `Couldn't read the secret …` | The token secret's name in `.env` is wrong, or the bot's service account lost Secret Accessor on it. |
+| `No Google credentials found` or 403 errors | The VM lost its service account, or the Sheet isn't shared with `taskbot@…` any more. Share it again as Editor. |
+| "Google Sheets didn't answer in time" in Discord | Usually Google's per-minute limit. Wait a minute and check with `/tasks`; the bot retries by itself. |
+| Slash commands don't show up | Restart Discord (Ctrl+R). If they still don't, check `TASKBOT_GUILD_ID` is the server's ID. |
+| "⛔ … belongs to …" | Only a task's owners or an admin can change it. Ask an admin, or fix the Owner(s) cell in the Sheet. |
+| "already linked to another Discord account" | An admin can fix it with `/link name member`. |
+| Someone pressed Done by mistake | Undo within 10 minutes; after that, `/status` sets it back, and the Completion date can be cleared by hand. |
+
 ### Running it on your own computer
 
 For development, put the token itself in `TASKBOT_DISCORD_TOKEN` in a local `.env` and run `chmod 600 .env`.
@@ -260,8 +304,11 @@ Service account key files (`TASKBOT_GOOGLE_CREDENTIALS_FILE`) are still read if 
 ## Development
 
 ```bash
-pip install -r requirements.txt pytest
+pip install --require-hashes --only-binary=:all: -r requirements.lock
+pip install pytest
 python -m pytest
 ```
 
-The planning and Sheet logic (`sheet.py`, `planner.py`, `store.py`) is tested against an in-memory fake of the Sheet, so tests don't need Discord or Google.
+The planning and Sheet logic (`sheet.py`, `planner.py`, `store.py`, `digest.py`, `access.py`) and the bot's sign-off, permission and undo rules are tested against an in-memory fake of the Sheet, so tests don't need Discord or Google.
+
+`requirements.txt` holds the version ranges; `requirements.lock` is generated from it (the command is at the top of the lock file). Regenerate the lock whenever `requirements.txt` changes.

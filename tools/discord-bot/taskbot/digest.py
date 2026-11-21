@@ -146,3 +146,36 @@ def focus(
         lead = f"🏁 **{gate.gate}** {when} ({gate.target:%d %b}): {gate.title}"
         lines.append(f"{lead}. {_plural(len(due), 'open task')} due by then." if due else lead)
     return lines
+
+
+def gate_heads_up(
+    milestones: list[Milestone],
+    open_tasks: list[Task],
+    today: date,
+    days: int,
+    owners: Callable[[Task], str],
+) -> list[str]:
+    """A reminder for each unfinished gate exactly ``days`` away, with what's still open
+    that's due by then. Empty when there's nothing to say."""
+    if days <= 0:
+        return []
+    lines: list[str] = []
+    for m in milestones:
+        if not m.target or (m.target - today).days != days:
+            continue
+        if m.status.strip().casefold() == "done":
+            continue
+        due = sorted(
+            (t for t in open_tasks if t.finish and t.finish <= m.target),
+            key=lambda t: (PRIORITY_RANK.get(t.priority.strip().casefold(), 9), t.finish),
+        )
+        when = "tomorrow" if days == 1 else f"in {days} days"
+        lines.append(f"⏰ **{m.gate}** is {when} ({m.target:%a %d %b}): {m.title}")
+        if due:
+            lines.append(f"Still open and due by then ({len(due)}):")
+            lines += [f"• `{t.id}` {t.title} · {owners(t)}" for t in due[:15]]
+            if len(due) > 15:
+                lines.append(f"…and {len(due) - 15} more. See `/week`.")
+        else:
+            lines.append("Everything due by then is signed off. 🎉")
+    return lines

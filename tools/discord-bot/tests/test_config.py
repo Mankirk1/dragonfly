@@ -40,3 +40,17 @@ def test_bad_values_are_explained():
 
 def test_token_is_not_in_repr():
     assert "tok-not-shown" not in repr(Settings(discord_token="tok-not-shown"))
+
+
+def test_admin_alert_and_heads_up_settings():
+    s = Settings.from_env(
+        {
+            "TASKBOT_ADMIN_ROLE": "Leads",
+            "TASKBOT_ALERT_USER_ID": "42",
+            "TASKBOT_GATE_NOTICE_DAYS": "3",
+        }
+    )
+    assert (s.admin_role, s.alert_user_id, s.gate_notice_days) == ("Leads", 42, 3)
+    d = Settings.from_env({})
+    assert (d.admin_role, d.alert_user_id, d.gate_notice_days) == ("", 0, 2)
+    assert Settings.from_env({"TASKBOT_GATE_NOTICE_DAYS": "-1"}).gate_notice_days == 0
