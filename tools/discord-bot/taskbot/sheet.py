@@ -28,6 +28,8 @@ FIELDS = (
     "progress",
     "workstream",
     "priority",
+    "expected",
+    "next_action",
 )
 
 # Header names we recognise for each field, matched without case and without any
@@ -80,6 +82,9 @@ ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "workstream": ("workstream", "category", "area", "phase"),
     "priority": ("priority",),
+    # Read only, to show in DMs what "done" means and what comes next.
+    "expected": ("expected output", "expected result", "acceptance criteria", "definition of done"),
+    "next_action": ("next action / rescheduled work", "next action", "next step", "next steps"),
 }
 
 # Columns the bot adds when they're missing and auto_add_columns is on.
@@ -117,6 +122,8 @@ class Task:
     progress: str = ""
     workstream: str = ""
     priority: str = ""
+    expected: str = ""
+    next_action: str = ""
 
     def is_done(self, done_values: tuple[str, ...]) -> bool:
         return self.status.strip().casefold() in done_values
@@ -249,6 +256,19 @@ def safe_cell(value: str) -> str:
     return value
 
 
+_LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+
+def clean_link(text: str) -> str | None:
+    """A plain http(s) link with nothing else around it, or None if it isn't one."""
+    text = text.strip()
+    if not text:
+        return ""
+    if len(text) > 300 or not _LINK.fullmatch(text):
+        return None
+    return text
+
+
 def short_date(day: date | None) -> str:
     return day.strftime("%d %b") if day else ""
 
@@ -375,6 +395,8 @@ def parse_tasks(
                 progress=cell(row, "progress"),
                 workstream=cell(row, "workstream"),
                 priority=cell(row, "priority"),
+                expected=cell(row, "expected"),
+                next_action=cell(row, "next_action"),
             )
         )
     return TaskTable(header_row=header_row, headers=headers, columns=cols, tasks=tasks)
@@ -530,6 +552,7 @@ LOG_ALIASES = {
     "action": ("what was actually done", "action", "what happened"),
     "status": ("status / result", "status", "result"),
     "note": ("blocker / comments", "note", "notes", "comments"),
+    "evidence": ("outcome / evidence link", "evidence link", "evidence", "outcome", "link"),
 }
 LOG_HEADERS = ["Date", "Week beginning", "Member", "Related task ID", "Task", "Action", "Status",
-               "Note"]  # fmt: skip
+               "Note", "Evidence"]  # fmt: skip

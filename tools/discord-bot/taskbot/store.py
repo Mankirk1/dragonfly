@@ -25,6 +25,7 @@ from .sheet import (
     looks_like_task_tab,
     next_ids,
     parse_calendar,
+    parse_date,
     parse_milestones,
     parse_task_values,
     parse_team,
@@ -297,6 +298,9 @@ class SheetStore:
         changes: dict[str, str],
         expected_title: str | None = None,
         only_if_blank: frozenset[str] = frozenset(),
+        require_status: tuple[str, ...] = (),
+        clear_if: dict[str, str] | None = None,
+        drop_note: tuple[int, str] | None = None,
     ) -> Task:
         """Write ``changes`` ({field: value}) into one task's row, with safety checks.
 
@@ -305,7 +309,17 @@ class SheetStore:
         target cell holds a formula, no value would blank a filled cell, and a status is
         one of the dropdown's options. A ``progress`` note is added to the cell, never
         replacing it. Fields in ``only_if_blank`` are skipped when already filled.
+
+        ``require_status`` refuses unless the task's status is currently one of those.
+        ``clear_if`` ({field: value}) is the one way to blank a cell: only when it still
+        holds exactly that value (dates compared as dates), as when undoing a sign-off
+        the bot itself just wrote. A cell holding anything else is left alone.
+
+        ``drop_note`` (length, ending) takes back the last progress note the bot added:
+        only when the cell ends with a note of exactly that length that ends that way,
+        and what's left is either nothing or the earlier notes. Otherwise it's kept.
         """
+        clear_if = clear_if or {}
         ws = self._tasks_ws()
         values = ws.get_all_values()
         table = parse_task_values(values, self.settings, self.project_start())
@@ -318,6 +332,10 @@ class SheetStore:
         if expected_title is not None and task.title != expected_title:
             raise UnsafeWriteError(
                 f"{task_id}'s row changed since it was read, so I didn't edit it. Try again."
+            )
+        if require_status and task.status.strip().casefold() not in require_status:
+            raise UnsafeWriteError(
+                f'{task_id} is now "{task.status or "blank"}", so I didn\'t change it'
             )
         formulas = self._formulas(ws, task.row)
         protected = {table.column(f) for f in ("id", "task", "week", "start", "finish")}
@@ -338,6 +356,14 @@ class SheetStore:
                 raise UnsafeWriteError(f"{cell} holds a formula, so I won't overwrite it")
             if name in only_if_blank and str(current).strip():
                 continue
+            if name in clear_if:
+                if str(value).strip():
+                    raise UnsafeWriteError(f"{name} can only be cleared, not set, this way")
+                if str(current).strip() and self._same(str(current), clear_if[name]):
+                    cells.append((task.row, col, ""))
+                    if hasattr(task, name):
+                        setattr(task, name, "")
+                continue
             if name == "status":
                 value = self._status_value(task.status, value)
             if name == "progress" and value and str(current).strip():
@@ -351,10 +377,65 @@ class SheetStore:
                 task.assignees = split_names(value)
             elif hasattr(task, name):
                 setattr(task, name, value)
+        idx = table.column("progress")
+        if drop_note and idx is not None and idx not in protected:
+            length, ending = drop_note
+            current = values[task.row - 1][idx] if idx < len(values[task.row - 1]) else ""
+            typed = formulas[idx] if idx < len(formulas) else ""
+            note, rest = current[-length:], current[:-length]
+            if (
+                length > 0
+                and len(current) >= length
+                and note.endswith(ending)
+                and not str(typed).startswith("=")
+                and (rest == "" or rest.endswith("; "))
+            ):
+                kept = rest[:-2] if rest else ""
+                cells.append((task.row, idx + 1, safe_cell(kept)))
+                task.progress = kept
         self._write(ws, cells)
         if cells and not self.settings.read_only:
             self._verify(ws, task)
         return task
+
+    def _same(self, current: str, expected: str) -> bool:
+        """Whether a cell still holds what the bot wrote: dates as dates, text exactly."""
+        a = parse_date(current, self.settings.day_first)
+        b = parse_date(expected, self.settings.day_first)
+        if a is not None and b is not None:
+            return a == b
+        return current.strip() == expected.strip()
+
+    def reopen(
+        self,
+        task_id: str,
+        expected_title: str,
+        status: str,
+        signed_on: date,
+        by: str,
+        today: date,
+        note_length: int = 0,
+    ) -> Task:
+        """Undo a sign-off: put the status back, and take back the completion date,
+        "signed off by" and progress note the bot wrote, but only if they still hold
+        exactly what it wrote."""
+        return self.update_task(
+            task_id,
+            {
+                "status": status,
+                "last_updated": today.isoformat(),
+                "signed_off_at": "",
+                "signed_off_by": "",
+            },
+            expected_title=expected_title,
+            require_status=self.settings.done_values,
+            clear_if={"signed_off_at": signed_on.isoformat(), "signed_off_by": by},
+            drop_note=(note_length, f"({by}, {signed_on:%d %b})") if note_length else None,
+        )
+
+    def ping(self) -> None:
+        """One cheap read, to check the Sheet can still be reached."""
+        self._worksheets(fresh=True)
 
     def _verify(self, ws: Any, task: Task) -> None:
         """Re-read the row after writing and check it still belongs to the same task."""
@@ -402,9 +483,29 @@ class SheetStore:
             self._write(ws, [(i + 2, 1, safe_cell(n)) for i, n in enumerate(names)], own=True)
         return parse_team(ws.get_all_values())
 
-    def link_member(self, name: str, discord_id: int) -> Member:
+    def link_member(self, name: str, discord_id: int, admin: bool = False) -> Member:
+        """Link a Discord account to a name in the plan.
+
+        A name that's already linked to someone else, or an account that's already
+        linked to another name, can only be changed by an admin (``admin=True``), so
+        nobody can take over a groupmate's tasks by linking to their name.
+        """
         ws = self._tab(self.settings.team_tab, TEAM_HEADERS, own=True)
         members = parse_team(ws.get_all_values())
+        named = next((m for m in members if m.name.casefold() == name.casefold()), None)
+        if named and named.discord_id == discord_id:
+            return named
+        if not admin:
+            if named and named.discord_id is not None:
+                raise UnsafeWriteError(
+                    f"{named.name} is already linked to another Discord account. "
+                    "Ask an admin if that's wrong."
+                )
+            mine = next((m for m in members if m.discord_id == discord_id), None)
+            if mine:
+                raise UnsafeWriteError(
+                    f"You're already linked to {mine.name}. Ask an admin to change it."
+                )
         # The TEAM tab is the bot's own, so it may move a Discord ID between names here.
         for m in members:
             if m.discord_id == discord_id and m.name.casefold() != name.casefold():
@@ -427,6 +528,7 @@ class SheetStore:
         by: str,
         status: str = "",
         note: str = "",
+        evidence: str = "",
     ) -> None:
         """Add a row to the work log (the Sheet's own WORK LOG tab when it has one)."""
         ws = self._tab(self.settings.log_tab, LOG_HEADERS)
@@ -443,6 +545,7 @@ class SheetStore:
             "action": safe_cell(action),
             "status": status,
             "note": safe_cell(note),
+            "evidence": safe_cell(evidence),
         }
         row = [""] * (max(cols.values()) + 1)
         for name, idx in cols.items():
