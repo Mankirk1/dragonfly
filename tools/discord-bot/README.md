@@ -202,7 +202,7 @@ sudo chown root:taskbot .env && sudo chmod 640 .env
 sudo cp dragonfly-taskbot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now dragonfly-taskbot
-journalctl -u dragonfly-taskbot -f
+sudo journalctl -u dragonfly-taskbot -f
 ```
 
 You should see `Read 38 tasks from the plan`, and the bot shows as online in Discord. Press Ctrl+C to stop watching.
