@@ -30,8 +30,10 @@ class FakeWorksheet:
         self.writes: list[tuple[int, int, str]] = []
         self.col_count = cols or max((len(r) for r in rows), default=1)
         self.row_count = max(len(rows), 100)
+        self.reads = 0  # API reads, to keep within Google's 60-a-minute limit
 
     def get_all_values(self) -> list[list[str]]:
+        self.reads += 1
         shown = [
             [
                 self.shown.get((i + 1, j + 1), "") if str(v).startswith("=") else v
@@ -46,6 +48,7 @@ class FakeWorksheet:
 
     def row_values(self, row: int, value_render_option: str = "FORMATTED_VALUE") -> list[str]:
         assert value_render_option == "FORMULA"
+        self.reads += 1
         values = list(self.rows[row - 1]) if row <= len(self.rows) else []
         while values and values[-1] == "":
             values.pop()
@@ -82,9 +85,14 @@ class FakeWorksheet:
 class FakeBook:
     def __init__(self, *sheets: FakeWorksheet) -> None:
         self.sheets = list(sheets)
+        self.reads = 0
 
     def worksheets(self) -> list[FakeWorksheet]:
-        return self.sheets
+        self.reads += 1
+        return list(self.sheets)
+
+    def total_reads(self) -> int:
+        return self.reads + sum(ws.reads for ws in self.sheets)
 
     def add_worksheet(self, title: str, rows: int, cols: int) -> FakeWorksheet:
         ws = FakeWorksheet(title, [], cols)

@@ -185,3 +185,22 @@ def test_new_ids_follow_the_existing_pattern():
 
     tasks = [Task(5, "R09", "a", 1, 1), Task(6, "", "b", 1, 1), Task(7, "R10", "c", 1, 1)]
     assert next_ids(tasks) == {6: "R11"}
+
+
+def test_a_sign_off_stays_well_inside_googles_read_limit():
+    # Google allows 60 reads a minute. Two quick sign-offs once used ~56 of them.
+    b, store, _ = setup()
+
+    def sign_off(task_id: str) -> int:
+        before = b.total_reads()
+        cal = store.load_calendar()
+        table = store.load_tasks(cal.start)
+        store.load_team([n for t in table.tasks for n in t.assignees])
+        task = table.find(task_id)
+        store.update_task(task.id, {"status": "Done", "last_updated": "2026-11-21"}, task.title)
+        store.log(date(2026, 11, 21), cal.start, task, "Signed off in Discord", "Ana", "Done")
+        return b.total_reads() - before
+
+    sign_off("X02")  # the first one also sets up the TEAM tab
+    assert sign_off("X03") <= 10
+    assert b.sheets[2].rows[-1][3] == "X03"  # and the second still reached the WORK LOG

@@ -59,10 +59,12 @@ class UnsafeWriteError(RuntimeError):
 
 def open_spreadsheet(settings: Settings) -> Any:
     import gspread  # imported here so the pure modules can be tested without it
+    from gspread.http_client import BackOffHTTPClient
 
     from .gcp import sheets_credentials
 
-    client = gspread.authorize(sheets_credentials(settings))
+    # Waits and retries when Google says "too many requests" instead of failing.
+    client = gspread.authorize(sheets_credentials(settings), http_client=BackOffHTTPClient)
     return client.open_by_key(settings.sheet_id)
 
 
@@ -85,13 +87,23 @@ class SheetStore:
         self.book = spreadsheet
         self.settings = settings
         self._tasks_title: str | None = None
+        # Google allows 60 reads a minute, and listing the tabs or the calendar each
+        # time used most of that, so both are remembered between operations.
+        self._sheets: list[Any] | None = None
+        self._calendar: Calendar | None = None
 
     # -- worksheets -------------------------------------------------------------
 
+    def _worksheets(self, fresh: bool = False) -> list[Any]:
+        if fresh or self._sheets is None:
+            self._sheets = list(self.book.worksheets())
+        return self._sheets
+
     def _find_tab(self, title: str) -> Any | None:
-        for ws in self.book.worksheets():
-            if ws.title.strip().casefold() == title.strip().casefold():
-                return ws
+        for fresh in (False, True):  # look again in case a tab was added or renamed
+            for ws in self._worksheets(fresh):
+                if ws.title.strip().casefold() == title.strip().casefold():
+                    return ws
         return None
 
     def _tab(self, title: str, headers: list[str] | None = None, own: bool = False) -> Any:
@@ -109,6 +121,7 @@ class SheetStore:
             raise UnsafeWriteError(f'Read-only: would create a "{title}" tab')
         log.info("Creating the %s tab", title)
         ws = self.book.add_worksheet(title=title, rows=100, cols=len(headers))
+        self._sheets = None
         self._write(ws, [(1, c + 1, h) for c, h in enumerate(headers)], raw=True, own=own)
         return ws
 
@@ -119,7 +132,7 @@ class SheetStore:
             ws = self._find_tab(self._tasks_title)
             if ws is not None:
                 return ws
-        for ws in self.book.worksheets():
+        for ws in self._worksheets(fresh=True):
             if looks_like_task_tab(ws.get_all_values(), self.settings.columns):
                 self._tasks_title = ws.title
                 return ws
@@ -159,9 +172,16 @@ class SheetStore:
         typed = formulas[col - 1] if col <= len(formulas) else ""
         return not str(shown).strip() and not str(typed).strip()
 
-    def _append(self, ws: Any, values: list[str], own: bool = False) -> None:
+    def _append(
+        self,
+        ws: Any,
+        values: list[str],
+        own: bool = False,
+        existing: list[list[str]] | None = None,
+    ) -> None:
         """Write a new row below everything else, never over an existing row."""
-        existing = ws.get_all_values()
+        if existing is None:
+            existing = ws.get_all_values()
         row = len(existing) + 1
         for _ in range(50):  # skip rows that only look empty, e.g. formulas showing ""
             if row > ws.row_count or not any(v.strip() for v in self._formulas(ws, row)):
@@ -181,6 +201,9 @@ class SheetStore:
     # -- calendar ---------------------------------------------------------------
 
     def load_calendar(self) -> Calendar:
+        """Read the weeks and milestones. Also the start of each operation, so the list
+        of tabs is read fresh here and reused until the next one."""
+        self._sheets = None
         cal = Calendar()
         ws = self._find_tab(self.settings.checkin_tab)
         if ws is not None:
@@ -188,12 +211,13 @@ class SheetStore:
         ws = self._find_tab(self.settings.milestones_tab)
         if ws is not None:
             cal.milestones = parse_milestones(ws.get_all_values(), self.settings.day_first)
+        self._calendar = cal
         return cal
 
     def project_start(self, cal: Calendar | None = None) -> date | None:
         if self.settings.project_start:
             return self.settings.project_start
-        return (cal or self.load_calendar()).start
+        return (cal or self._calendar or self.load_calendar()).start
 
     def fill_checkin(self, week: int, completed: str, moved: str) -> bool:
         """Fill a week's "completed" and "moved" cells, but only where they're empty."""
@@ -423,4 +447,4 @@ class SheetStore:
         row = [""] * (max(cols.values()) + 1)
         for name, idx in cols.items():
             row[idx] = fields.get(name, "")
-        self._append(ws, row)
+        self._append(ws, row, existing=values)
