@@ -2,7 +2,14 @@
 
 A Discord bot that runs the team's plan from the **Radar Detection Timeline** Google Sheet (in the Proposal Documents folder).
 
-- **Every Saturday** (the plan's weeks run Saturday to Friday; day and time are configurable) it works out the project week from the WEEKLY CHECK-IN tab, then posts in your team channel: that week's focus, the next milestone gate, every open task whose target dates fall in the week, and anything past its target finish that isn't done. Each person gets a DM with their own list and ✅ buttons. Tasks owned by "All" go to everyone.
+- **Every Saturday** (the plan's weeks run Saturday to Friday; day and time are configurable) it works out the project week from the WEEKLY CHECK-IN tab, then posts in your team channel:
+  - **Last week in brief:** what was signed off, what was due and is still open, and what's in progress or blocked.
+  - **Focus for this week:** the WEEKLY CHECK-IN focus, the three tasks to do first (overdue, then critical, then soonest), any missed milestone, and the next milestone gate with how many open tasks are due before it.
+  - Every open task whose target dates fall in the week, and anything past its target finish that isn't done.
+
+  Both summaries are built only from what's in the Sheet.
+
+  Each person gets a DM with their own list and ✅ buttons. Tasks owned by "All" go to everyone.
 - **Every Wednesday** it DMs a reminder of what each person still has open.
 - **Signing off** a task (the ✅ button or `/done`) sets its Status to Done, fills in Completion date and Last updated, adds your note to "What changed / actual progress", and adds a new row to the WORK LOG. Nothing in the log is ever overwritten.
 - `/status` sets In progress, Blocked or Postponed the same way. Blocked and postponed tasks are announced so the team sees them.

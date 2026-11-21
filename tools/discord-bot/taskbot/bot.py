@@ -14,6 +14,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from .config import Settings
+from .digest import focus, recap
 from .planner import WeeklyPlan, build_plan, current_week
 from .sheet import Member, Task, TaskTable, is_everyone, match_member, parse_date, people_for
 from .store import Calendar, SheetStore, UnsafeWriteError
@@ -90,31 +91,35 @@ def chunks(lines: list[str], limit: int = MAX_MESSAGE) -> list[str]:
 def weekly_summary(
     plan: WeeklyPlan,
     team: list[Member],
-    total: int,
-    done: int,
+    tasks: list[Task],
+    settings: Settings,
     cal: Calendar | None = None,
     today: date | None = None,
 ) -> list[str]:
     week = cal.week(plan.week) if cal else None
     span = f" ({week.start:%d %b} to {week.end:%d %b})" if week else ""
-    lines = [f"## 📡 Week {plan.week}{span}"]
-    if week and week.focus:
-        lines.append(f"**Focus:** {week.focus}")
-    pct = round(100 * done / total) if total else 0
-    lines.append(f"Project progress: **{done}/{total}** tasks done ({pct}%).")
-    if cal and today:
-        nxt = next(
-            (
-                m
-                for m in sorted(cal.milestones, key=lambda m: m.target or date.max)
-                if m.target and m.target >= today and m.status.casefold() != "done"
-            ),
-            None,
-        )
-        if nxt:
-            lines.append(f"Next gate: **{nxt.gate}** on {nxt.target:%d %b}: {nxt.title}")
-    if plan.done_last_week:
-        lines.append(f"Finished last week: {len(plan.done_last_week)} 🎉")
+    done = sum(t.is_done(settings.done_values) for t in tasks)
+    pct = round(100 * done / len(tasks)) if tasks else 0
+    lines = [
+        f"## 📡 Week {plan.week}{span}",
+        f"Project progress: **{done}/{len(tasks)}** tasks done ({pct}%).",
+    ]
+    last = cal.week(plan.week - 1) if cal else None
+    brief = recap(tasks, last, settings.done_values, settings.closed_values, settings.day_first)
+    if brief:
+        lines += ["", *brief]
+    lines += [""] + focus(
+        plan,
+        week,
+        cal.milestones if cal else [],
+        today or date.today(),
+        lambda t: who(t.assignees, team),
+        [
+            t
+            for t in tasks
+            if not t.is_done(settings.done_values) and not t.is_closed(settings.closed_values)
+        ],
+    )
     if plan.carried_over:
         lines.append("\n**Past their target finish, still open**")
         lines += [task_line(t, team) for t in plan.carried_over]
@@ -428,9 +433,8 @@ class TaskBot(discord.Client):
             await asyncio.to_thread(self._fill_last_week, table, cal, plan)
             self._cache = None
 
-        done = sum(t.is_done(self.settings.done_values) for t in table.tasks)
         ch = await self.channel()
-        summary = weekly_summary(plan, team, len(table.tasks), done, cal, self.today())
+        summary = weekly_summary(plan, team, table.tasks, self.settings, cal, self.today())
         for text in chunks(summary):
             await ch.send(text)
 
