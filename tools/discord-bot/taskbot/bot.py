@@ -18,6 +18,11 @@ from .planner import WeeklyPlan, build_plan, current_week
 from .sheet import Member, Task, TaskTable, is_everyone, match_member, parse_date, people_for
 from .store import Calendar, SheetStore, UnsafeWriteError
 
+SHEET_BUSY = (
+    "⚠️ Google Sheets didn't answer in time, so I'm not sure this saved. "
+    "Check with `/tasks` in a minute and try again if it's still open."
+)
+
 log = logging.getLogger(__name__)
 
 MAX_MESSAGE = 1900
@@ -155,7 +160,11 @@ class DoneButton(
     async def callback(self, interaction: discord.Interaction) -> None:
         bot: TaskBot = interaction.client  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True, thinking=True)
-        message = await bot.sign_off(self.task_id, interaction.user)
+        try:
+            message = await bot.sign_off(self.task_id, interaction.user)
+        except Exception:
+            log.exception("Sign-off of %s failed", self.task_id)
+            message = SHEET_BUSY
         await interaction.followup.send(message, ephemeral=True)
         if not message.startswith("✅") or interaction.message is None:
             return
@@ -281,6 +290,17 @@ class TaskBot(discord.Client):
         self, task_id: str, user: discord.abc.User, status: str, note: str = ""
     ) -> tuple[Task | None, str]:
         """Change a task's status in the Sheet and add a WORK LOG row. Returns (task, error)."""
+        try:
+            return await self._set_status(task_id, user, status, note)
+        except Exception:
+            # e.g. Google's rate limit outlasting the retries: answer instead of spinning
+            log.exception("Couldn't change %s", task_id)
+            self._cache = None
+            return None, SHEET_BUSY
+
+    async def _set_status(
+        self, task_id: str, user: discord.abc.User, status: str, note: str
+    ) -> tuple[Task | None, str]:
         async with self.lock:
             table, team, cal = await self.load()
             task = table.find(task_id)
@@ -315,6 +335,9 @@ class TaskBot(discord.Client):
                 )
             except (UnsafeWriteError, LookupError) as exc:
                 log.warning("Couldn't add a WORK LOG row for %s: %s", task.id, exc)
+            except Exception:
+                # The status is already saved; say so rather than reporting a failure.
+                log.exception("Couldn't add a WORK LOG row for %s", task.id)
             self._cache = None
             task.status = status
         return task, ""
@@ -483,6 +506,19 @@ class TaskBot(discord.Client):
 
 def register_commands(bot: TaskBot) -> None:
     tree = bot.tree
+
+    @tree.error
+    async def on_command_error(
+        interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        log.error("/%s failed", getattr(interaction.command, "name", "?"), exc_info=error)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(SHEET_BUSY, ephemeral=True)
+            else:
+                await interaction.response.send_message(SHEET_BUSY, ephemeral=True)
+        except discord.HTTPException:
+            pass
 
     async def task_choices(interaction: discord.Interaction, current: str):  # noqa: ANN202
         table, _, _ = await bot.load(fresh=False)
