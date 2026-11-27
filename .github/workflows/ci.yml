@@ -102,6 +102,8 @@ jobs:
         run: python dragonfly_netlist.py "$RUNNER_TEMP" ../../firmware/src/board.hpp
       - name: Drawn sheet matches the netlist
         run: python dragonfly_schematic.py "$RUNNER_TEMP"
+      - name: Portfolio diagram pins match the netlist
+        run: python dragonfly_portfolio_diagram.py "$RUNNER_TEMP"
 
   taskbot:
     name: Discord task bot tests

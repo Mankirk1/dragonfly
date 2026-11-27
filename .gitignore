@@ -58,6 +58,7 @@ recordings/
 *.pdf
 *.xlsx
 !docs/hardware/dragonfly_schematic.pdf
+!docs/hardware/dragonfly_portfolio_diagram.pdf
 
 # PlatformIO
 .pio/
