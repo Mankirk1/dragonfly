@@ -1,0 +1,40 @@
+Ref,Value,Function,Source
+C1,1000 µF 10 V,"Servo rail bulk, at J1 (electrolytic)",Procurement #11
+C2,1000 µF 10 V,"Servo rail bulk, at servos (electrolytic)",Procurement #11
+C3,100 nF,IF input coupling,Procurement #6
+C4,1 nF,Stage 1 low-pass,Procurement #6
+C5,10 µF,"Stage 1 DC block, ceramic X5R",Procurement #6
+C6,4.7 nF,Stage 2 low-pass,Procurement #6
+C7,22 µF,"Stage 2 DC block, ceramic X5R",Procurement #6
+C8,10 nF,Anti-alias low-pass,Procurement #6
+C9,10 µF,VREF divider filter,Procurement #6
+C10,100 nF,U2 decoupling,Procurement #6
+C11,100 nF,U3 decoupling,Procurement #6
+C12,10 µF,"RD-03D supply bulk, ceramic X5R (ripple ≤ 100 mV)",Procurement #6
+D1,BAT54S,"Dual Schottky, ADC input clamp",Procurement #6 (add)
+J1,DC barrel jack,"Servo supply input, 5 V >= 5 A",Procurement #10
+M1,RD-03D,"Ai-Thinker 24 GHz FMCW radar, UART",Procurement #1
+M2,CDM324,"24 GHz CW Doppler module, IF output",Procurement #2
+M3,MG996R,Pan servo,Procurement #9
+M4,MG996R,Tilt servo,Procurement #9
+M5,Laser 650 nm <= 1 mW,"IEC 60825-1 Class 2 laser module, 5 V",Procurement #12
+M6,SSD1306 OLED,"0.96"" 128x64 I2C display, addr 0x3C",Procurement #15
+Q1,AO3400,"Logic-level N-MOSFET, low-side laser switch",Procurement #14
+R1,100 kΩ,Stage 1 input bias to VREF,Procurement #6
+R2,1 kΩ,Stage 1 gain resistor,Procurement #6
+R3,100 kΩ,Stage 1 feedback,Procurement #6
+R4,470 Ω,Stage 2 gain resistor,Procurement #6
+R5,10 kΩ,"Stage 2 feedback, fixed part",Procurement #6
+R6,10 kΩ,Anti-alias low-pass and clamp current limit,Procurement #6
+R7,10 kΩ,"VREF divider, top",Procurement #6
+R8,10 kΩ,"VREF divider, bottom",Procurement #6
+R9,100 Ω,Q1 gate series resistor,Procurement #6
+R10,10 kΩ,Q1 gate pull-down (laser off while U1 resets),Procurement #6
+R11,1 kΩ,GPIO14 series protection (pin toggles at boot),Procurement #6
+R12,100 Ω,RD-03D TX series resistor (datasheet 7.4),Procurement #6
+R13,100 Ω,RD-03D RX series resistor (datasheet 7.4),Procurement #6
+RV1,10 kΩ trimmer,"Stage 2 gain trim, wired as rheostat",Procurement #6
+S1,"Key switch, 2-pole","Laser arm switch: A breaks laser supply, B tells firmware",Procurement #13
+U1,ESP32-WROOM-32 DevKit,"Main controller, 38-pin DevKit",Procurement #3
+U2,LM358,"Dual op-amp, Doppler amplifier stages 1 and 2",Procurement #5
+U3,LM358,"Dual op-amp, VREF buffer (B unused, tied off)",Procurement #5
