@@ -50,11 +50,15 @@ recordings/
 *.npz
 *.csv
 !tests/fixtures/**/*.csv
+!docs/hardware/dragonfly_netlist.csv
+!docs/hardware/dragonfly_bom.csv
 
 # Local documents that should never be published
 *.docx
 *.pdf
 *.xlsx
+!docs/hardware/dragonfly_schematic.pdf
+!docs/hardware/dragonfly_portfolio_diagram.pdf
 
 # PlatformIO
 .pio/
