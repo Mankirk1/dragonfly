@@ -1,4 +1,4 @@
-"""Dragonfly hardware netlist (Rev A): the single source of truth for the schematic.
+"""Dragonfly hardware netlist (Rev B): the single source of truth for the schematic.
 
 Every component pin is listed with its electrical type and the net it connects
 to. `check()` runs electrical rule checks; `export()` writes a netlist CSV,
@@ -54,8 +54,8 @@ PARTS = {
         {
             "5V": ("5V", PWR_IN, "+5V"),
             "GND": ("GND", PWR_IN, GROUND),
-            "TX": ("TX", OUT, "RD_TX"),
-            "RX": ("RX", IN, "RD_RX"),
+            "TX": ("TX", OUT, "M1_TX"),
+            "RX": ("RX", IN, "M1_RX"),
         },
     ),
     "M2": (
@@ -134,7 +134,7 @@ PARTS = {
         {
             "A1": ("A common", PAS, "+5V"),
             "A2": ("A out", PAS, "LASER_PWR"),
-            "B1": ("B common", PAS, "ARM_SENSE"),
+            "B1": ("B common", PAS, "ARM_SW"),
             "B2": ("B out", PAS, GROUND),
         },
     ),
@@ -187,6 +187,9 @@ PASSIVES = {
     "R8": ("10 kΩ", "VREF divider, bottom", "VREF_DIV", GROUND),
     "R9": ("100 Ω", "Q1 gate series resistor", "LASER_EN", "LASER_GATE"),
     "R10": ("10 kΩ", "Q1 gate pull-down (laser off while U1 resets)", "LASER_GATE", GROUND),
+    "R11": ("1 kΩ", "GPIO14 series protection (pin toggles at boot)", "ARM_SENSE", "ARM_SW"),
+    "R12": ("100 Ω", "RD-03D TX series resistor (datasheet 7.4)", "M1_TX", "RD_TX"),
+    "R13": ("100 Ω", "RD-03D RX series resistor (datasheet 7.4)", "RD_RX", "M1_RX"),
     "C1": ("1000 µF 10 V", "Servo rail bulk, at J1 (electrolytic)", "+5V_SERVO", GROUND),
     "C2": ("1000 µF 10 V", "Servo rail bulk, at servos (electrolytic)", "+5V_SERVO", GROUND),
     "C3": ("100 nF", "IF input coupling", "DOPPLER_IF", "AMP1_IN"),
@@ -198,6 +201,7 @@ PASSIVES = {
     "C9": ("10 µF", "VREF divider filter", "VREF_DIV", GROUND),
     "C10": ("100 nF", "U2 decoupling", "+5V", GROUND),
     "C11": ("100 nF", "U3 decoupling", "+5V", GROUND),
+    "C12": ("10 µF", "RD-03D supply bulk, ceramic X5R (ripple ≤ 100 mV)", "+5V", GROUND),
 }
 POLARISED = {"C1": ("+5V_SERVO", GROUND), "C2": ("+5V_SERVO", GROUND)}  # (+, -)
 
@@ -341,6 +345,20 @@ def check(board_hpp=None):
         "R10 holds Q1 off while U1 boots",
     )
 
+    # 10b. GPIO14 drives a PWM burst at boot; it must not meet the closed switch directly
+    direct = {r for r, *_ in NETS["ARM_SENSE"]} - {"U1"}
+    add(
+        direct == {"R11"},
+        "GPIO14 protected from the arm switch",
+        "GPIO14 toggles during boot; R11 limits the current if S1B is closed "
+        f"(ARM_SENSE also connects to: {sorted(direct)})",
+    )
+    # 10c. RD-03D datasheet 7.4: 10 to 100 Ω in series with the UART lines
+    rd = all(
+        any(r in ("R12", "R13") for r, *_ in NETS[n]) for n in ("RD_TX", "RD_RX", "M1_TX", "M1_RX")
+    )
+    add(rd, "RD-03D UART series resistors", "R12, R13 = 100 Ω (Rd-03D spec V1.0.0, section 7.4)")
+
     # 11. servo current kept off the USB rail
     sv = {r for r, *_ in NETS["+5V_SERVO"]}
     add(
@@ -440,6 +458,34 @@ def check(board_hpp=None):
             "ADC headroom",
             "LM358 swings ≈ 0 to 3.5 V on 5 V; D1 + R6 clamp to ≤ 3.3 V + 0.3 V. "
             "ESP32 ADC at 11 dB is most linear ≈ 0.15 to 2.45 V, so set RV1 for ≤ ±0.8 V around VREF.",
+        )
+    )
+
+    # 14. USB (+5V) current budget. Figures are datasheet or typical values (mA, avg / peak).
+    budget = {
+        "U1 ESP32 (Wi-Fi TX peak 240 mA, ESP32 datasheet)": (80, 240),
+        "M1 RD-03D (avg 92 mA, peak ≥ 200 mA, Rd-03D spec Table 4 and 7.3)": (92, 200),
+        "M2 CDM324 (≈ 40 mA, supplier listing)": (40, 40),
+        "M5 laser module (≤ 1 mW modules draw ≈ 20 to 30 mA; check yours)": (30, 30),
+        "M6 SSD1306 OLED (≈ 20 mA all pixels on)": (10, 20),
+        "U2, U3 LM358 (≈ 0.7 mA each)": (2, 2),
+    }
+    avg = sum(a for a, _ in budget.values())
+    peak = sum(b for _, b in budget.values())
+    res.append(
+        (
+            "INFO",
+            "USB 5 V budget",
+            f"≈ {avg} mA average, ≈ {peak} mA worst-case peak: "
+            + "; ".join(f"{k}: {a}/{b}" for k, (a, b) in budget.items()),
+        )
+    )
+    res.append(
+        (
+            "PASS" if avg < 500 else "FAIL",
+            "Average load inside a 500 mA USB 2.0 port",
+            f"{avg} mA. Peaks can reach ≈ {peak} mA, so use a USB 3 port (900 mA) or a "
+            "≥ 1 A USB supply if the board browns out",
         )
     )
 

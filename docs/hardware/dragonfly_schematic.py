@@ -1,4 +1,4 @@
-"""Dragonfly system schematic (Rev A).
+"""Dragonfly system schematic (Rev B).
 
 Draws the full system schematic on one A3 landscape sheet with schemdraw
 (component symbols) and matplotlib (frames, modules, net labels, title block).
@@ -7,6 +7,7 @@ Usage:  python dragonfly_schematic.py [outdir]
 Writes dragonfly_schematic.{pdf,svg,png}.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -35,9 +36,16 @@ fig = plt.figure(figsize=(16.54, 11.69))
 ax = fig.add_axes([0, 0, 1, 1])
 ops = []  # deferred matplotlib drawing
 
+# Connectivity recorded while drawing, so the sheet itself can be checked against the netlist.
+SEGS = []  # wire segments ((x0, y0), (x1, y1))
+LABELS = []  # ((x, y), net name) from net flags, power ports and ground symbols
+PINS = {}  # (ref, pin) -> (x, y) terminal point of a drawn part
+
 
 # ---------------------------------------------------------------- primitives
-def wire(*pts):
+def wire(*pts, record=True):
+    if record:
+        SEGS.extend(zip(pts[:-1], pts[1:], strict=True))
     xs, ys = zip(*pts, strict=True)
     ops.append(lambda: ax.plot(xs, ys, color=INK, lw=LW, solid_capstyle="round", zorder=3))
 
@@ -104,6 +112,7 @@ def port(x, y, name, up=True, stub=1.6):
 
 def gnd(x, y, stub=1.0):
     wire((x, y), (x, y - stub))
+    LABELS.append(((x, y - stub), "GND"))
     yb = y - stub
     for i, half in enumerate((1.0, 0.62, 0.25)):
         yy = yb - i * 0.38
@@ -129,7 +138,13 @@ def frame(x0, y0, x1, y1, tag, title):
     text(x0 + 3.6, y1 - 1.3, title, size=8, weight="bold", color="#2B2B2B")
 
 
-def module(x0, y0, w, h, ref, value, pins, desc=None):
+def pin_id(name):
+    """Module pin name on the sheet -> pin key in the netlist."""
+    m = re.match(r"GPIO(\d+)", name)
+    return f"IO{m.group(1)}" if m else name.replace("−", "-")
+
+
+def module(x0, y0, w, h, ref, value, pins, desc=None, pid=None):
     """Box with pins. pins: list of (side, pos, name) where side in L/R/T/B and pos is
     the y (L/R) or x (T/B) coordinate. Returns {name: pin-end (x, y)}."""
     ops.append(
@@ -164,6 +179,8 @@ def module(x0, y0, w, h, ref, value, pins, desc=None):
             text(pos, y0 + 0.6, name, size=6.2, ha="center", va="bottom")
         wire(a, b)
         ends[name] = b
+        if name != "USB":  # USB goes to the host PC, off the netlist
+            PINS[(pid or ref, pin_id(name))] = b
     return ends
 
 
@@ -177,6 +194,7 @@ DRAWN_NETS = set()
 def flag(x, y, name, side):
     assert name in NETS, f"net label {name} is not in the netlist"
     DRAWN_NETS.add(name)
+    LABELS.append(((x, y), name))
     _flag(x, y, name, side)
 
 
@@ -184,10 +202,13 @@ def port(x, y, name, up=True, stub=1.6):
     assert name in NETS, f"rail {name} is not in the netlist"
     DRAWN_NETS.add(name)
     _port(x, y, name, up, stub)
+    LABELS.append(((x, y + (stub if up else -stub)), name))
 
 
 def lab(ref, sep="\n"):
-    """Designator and value straight from the netlist, so the drawing cannot drift."""
+    """Designator and value straight from the netlist, so the drawing cannot drift.
+    Also tells part() which component it is placing, so its terminals are recorded."""
+    PENDING[0] = ref
     return f"{ref}{sep}{PASSIVES[ref][0]}".replace(" 10 V", "\n10 V")
 
 
@@ -196,8 +217,16 @@ d = schemdraw.Drawing(canvas=ax, show=False)
 d.config(fontsize=6.8, font=FONT, lw=LW, color=INK)
 
 
+PENDING = [None]
+
+
 def part(e, scale=S):
-    return d.add(e.scale(scale))
+    el = d.add(e.scale(scale))
+    ref, PENDING[0] = PENDING[0], None
+    if ref:
+        PINS[(ref, "1")] = tuple(el.absanchors["start"])
+        PINS[(ref, "2")] = tuple(el.absanchors["end"])
+    return el
 
 
 def pinno(x, y, n, ha="left"):
@@ -215,12 +244,24 @@ p = module(
     "RD-03D",
     [("T", 21, "5V"), ("B", 21, "GND"), ("R", 103, "TX"), ("R", 99, "RX")],
 )
-port(*p["5V"], "+5V")
+vx, vy = p["5V"][0], p["5V"][1] + 1.2
+wire(p["5V"], (vx, vy))
+port(vx, vy, "+5V", stub=1.0)
 gnd(*p["GND"])
-wire(p["TX"], (31, 103))
-flag(31, 103, "RD_TX", "r")
-wire(p["RX"], (31, 99))
-flag(31, 99, "RD_RX", "r")
+# supply bulk capacitor at the module (Rd-03D spec 7: ripple within 100 mV)
+dot(vx, vy)
+wire((vx, vy), (8, vy))
+part(elm.Capacitor().at((8, vy)).down(4).label(lab("C12"), loc="top", ofst=0.3))
+gnd(8, vy - 4)
+# 100 Ω series resistors on the UART lines (Rd-03D spec 7.4)
+wire(p["TX"], (27, 103))
+part(elm.Resistor().at((27, 103)).right(4).label(lab("R12", "  "), loc="top", ofst=0.3))
+wire((31, 103), (33, 103))
+flag(33, 103, "RD_TX", "r")
+wire(p["RX"], (27, 99))
+part(elm.Resistor().at((27, 99)).right(4).label(lab("R13", "  "), loc="top", ofst=0.3))
+wire((31, 99), (33, 99))
+flag(33, 99, "RD_RX", "r")
 text(13.0, 101, "24 GHz\nFMCW", size=6, color=MUTED)
 text(
     30,
@@ -378,6 +419,8 @@ port(29, Y - 5, "VREF", up=False, stub=0.8)
 def opamp(x, y, ref, pins):
     o = part(elm.Opamp(leads=True).right().flip().anchor("in2").at((x, y)))
     A = {k: tuple(v) for k, v in o.absanchors.items()}
+    for anchor, pin in zip(("in2", "in1", "out"), pins, strict=True):
+        PINS[(ref[:2], pin)] = A[anchor]
     text(x + 1.6, y + 2.7, ref, size=7, weight="bold")
     text(x + 1.6, y + 1.5, "LM358", size=6.2, color=MUTED)
     pinno(A["in2"][0] + 0.15, A["in2"][1] + 0.05, pins[0])
@@ -403,6 +446,9 @@ def amp_stage(A, nx, fb_parts, cfb, rg, cdc, xr, y_r, y_c, rg_len=4):
                 .label(f"{ref}  {PARTS[ref][0].split()[0]} kΩ", loc="top", ofst=0.3)
             )
             tp = pot.absanchors["tap"]
+            PINS[(ref, "1")] = tuple(pot.absanchors["start"])
+            PINS[(ref, "3")] = tuple(pot.absanchors["end"])
+            PINS[(ref, "2")] = tuple(tp)
             wire(tuple(tp), (tp[0], tp[1] + 0.7), (x + ln, tp[1] + 0.7), (x + ln, y_r))
             dot(x + ln, y_r)
         x += ln
@@ -446,9 +492,13 @@ dot(65, Y3)
 dot(70, Y3)
 part(elm.Capacitor().at((65, Y3)).down(4).label(lab("C8"), loc="bottom", ofst=0.3))
 gnd(65, Y3 - 4)
-part(elm.Schottky().at((70, Y3)).up(3.6))
+d1b = part(elm.Schottky().at((70, Y3)).up(3.6))  # anode = pin 3 (common), cathode = pin 2
 port(70, Y3 + 3.6, "+3V3", stub=0.8)
-part(elm.Schottky().at((70, Y3 - 3.6)).up(3.6))
+d1a = part(elm.Schottky().at((70, Y3 - 3.6)).up(3.6))  # anode = pin 1, cathode = pin 3
+PINS[("D1", "1")] = tuple(d1a.absanchors["start"])
+PINS[("D1", "3")] = tuple(d1a.absanchors["end"])
+PINS[("D1", "3b")] = tuple(d1b.absanchors["start"])
+PINS[("D1", "2")] = tuple(d1b.absanchors["end"])
 gnd(70, Y3 - 3.6)
 text(71.3, Y3 + 1.8, "D1B", size=6.5, weight="bold")
 text(71.3, Y3 - 1.8, "D1A", size=6.5, weight="bold")
@@ -460,7 +510,7 @@ flag(76, Y3, "DOPPLER_ADC", "r")
 
 # op-amp supply pins (bottom-left)
 for ref, x, cref in (("U2", 61.0, "C10"), ("U3", 75.0, "C11")):
-    pp = module(x, 22.5, 6, 5, "", "", [("T", x + 1.5, "8"), ("B", x + 1.5, "4")])
+    pp = module(x, 22.5, 6, 5, "", "", [("T", x + 1.5, "8"), ("B", x + 1.5, "4")], pid=ref)
     text(x + 3.9, 25.0, f"{ref}\nLM358", size=6, ha="center", weight="semibold")
     port(*pp["8"], "+5V", stub=1.0)
     gnd(*pp["4"], stub=0.6)
@@ -567,20 +617,24 @@ text(
 
 # ---------------------------------------------------------------- F  LASER
 frame(118, 58, 164, 86, "F", "LASER INDICATOR AND SAFETY INTERLOCK")
-sw = d.add(elm.SwitchDpst().right().scale(2.4).at((131, 80)))
+sw = d.add(elm.SwitchDpst().right().scale(2.4).at((132.5, 80)))
 a = {k: tuple(v) for k, v in sw.absanchors.items()}
-port(127, 80, "+5V", stub=1.4)
-wire((127, 80), a["p1"])
+PINS.update(
+    {("S1", "A1"): a["p1"], ("S1", "A2"): a["t1"], ("S1", "B1"): a["p2"], ("S1", "B2"): a["t2"]}
+)
+port(128.5, 80, "+5V", stub=1.4)
+wire((128.5, 80), a["p1"])
 wire(a["t1"], (141, 80), (141, 77))
-flag(129, a["p2"][1], "ARM_SENSE", "l")
-wire((129, a["p2"][1]), a["p2"])
-wire(a["t2"], (a["t2"][0] + 0.8, a["p2"][1]), (a["t2"][0] + 0.8, a["p2"][1] - 0.6))
-gnd(a["t2"][0] + 0.8, a["p2"][1] - 0.6, stub=0.6)
-text(130.2, 82.6, "S1", size=7.5, weight="bold")
-text(132.6, 82.6, "key switch, 2-pole", size=6, color=MUTED)
+flag(126.5, a["p2"][1], "ARM_SENSE", "l")
+part(elm.Resistor().at((126.5, a["p2"][1])).right(4).label(lab("R11", " "), loc="bottom", ofst=0.3))
+wire((130.5, a["p2"][1]), a["p2"])
+wire(a["t2"], (a["t2"][0], a["t2"][1] - 0.15))
+gnd(a["t2"][0], a["t2"][1] - 0.15, stub=1.0)
+text(131.7, 82.6, "S1", size=7.5, weight="bold")
+text(134.1, 82.6, "key switch, 2-pole", size=6, color=MUTED)
 text(a["t1"][0] + 0.4, 80.6, "A", size=5.6, color=MUTED)
 text(a["t2"][0] + 0.4, a["p2"][1] + 0.6, "B", size=5.6, color=MUTED)
-text(135.2, 80.6, "LASER_PWR", size=5.2, color=MUTED)
+text(136.2, 80.6, "LASER_PWR", size=5.2, color=MUTED)
 m5 = module(137, 69, 8, 6, "M5", "", [("T", 141, "+"), ("B", 141, "−")])
 text(141, 72, "650 nm  ≤ 1 mW", size=5.6, ha="center", color=MUTED)
 text(146.5, 73.4, "Laser module, 5 V\nIEC 60825-1 Class 2", size=6, color=MUTED, va="center")
@@ -591,9 +645,9 @@ def nmos(x, yd):
     """Enhancement N-MOSFET drawn directly: drain at (x, yd), source 3 below, gate on the left."""
     ys = yd - 3.0
     ym = yd - 1.5
-    wire((x, yd), (x, yd - 0.8), (x - 0.75, yd - 0.8))
-    wire((x, ys), (x, ys + 0.8), (x - 0.75, ys + 0.8))
-    wire((x, ym), (x, ys + 0.8))
+    wire((x, yd), (x, yd - 0.8), (x - 0.75, yd - 0.8), record=False)
+    wire((x, ys), (x, ys + 0.8), (x - 0.75, ys + 0.8), record=False)
+    wire((x, ym), (x, ys + 0.8), record=False)
     for y0, y1 in ((yd - 0.45, yd - 1.15), (ym - 0.3, ym + 0.3), (ys + 0.45, ys + 1.15)):
         ops.append(
             lambda y0=y0, y1=y1: ax.plot(
@@ -612,11 +666,12 @@ def nmos(x, yd):
             zorder=4,
         )
     )
-    wire((x - 2.2, ym), (x - 1.2, ym))
+    wire((x - 2.2, ym), (x - 1.2, ym), record=False)
     return {"drain": (x, yd), "source": (x, ys), "gate": (x - 2.2, ym), "center": (x, ym)}
 
 
 qa = nmos(141, 66)
+PINS.update({("Q1", "D"): qa["drain"], ("Q1", "S"): qa["source"], ("Q1", "G"): qa["gate"]})
 gnd(141, qa["source"][1], stub=0.6)
 text(142.8, qa["center"][1] + 0.6, "Q1", size=7, weight="bold")
 text(142.8, qa["center"][1] - 0.7, "AO3400", size=6, color=MUTED)
@@ -668,7 +723,7 @@ text(
 # ---------------------------------------------------------------- NOTES
 frame(5, 4, 116, 17, "N", "NOTES")
 notes = [
-    "1.  Netlist, BOM and electrical rule checks: dragonfly_netlist.py (all checks pass). Pin map matches firmware/src/board.hpp.",
+    "1.  Rule checks: dragonfly_netlist.py (all pass, incl. pin map vs firmware/src/board.hpp). This sheet's wiring is re-checked against that netlist on every render.",
     "2.  +5V_SERVO comes from J1 only. Servo and logic grounds join at one point near U1 so servo current stays out of the analog ground.",
     "3.  Laser is IEC 60825-1 Class 2 (≤ 1 mW); see docs/safety/laser-interlock.md. Test T9 must pass before any trial with a person.",
     "4.  Analog values are nominal. Set RV1 on the bench so the ADC never clips. C5, C7 ceramic X5R; C1, C2 electrolytic.",
@@ -696,9 +751,96 @@ missing = (
         "LASER_PWR",
         "LASER_SW",
         "LASER_GATE",
+        "M1_TX",
+        "M1_RX",
+        "ARM_SW",
     }
 )
 assert not missing, f"netlist nets never labelled on the sheet: {missing}"
+
+
+def sheet_netlist():
+    """Rebuild the netlist from the drawing alone: wires join at shared end points and where
+    an end point lands on another wire (T-junction); wires that merely cross do not join.
+    Labels with the same name join across the sheet."""
+    key = lambda pt: (round(pt[0], 3), round(pt[1], 3))  # noqa: E731
+    parent = {}
+
+    def find(k):
+        parent.setdefault(k, k)
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    def union(a, b):
+        parent[find(a)] = find(b)
+
+    def on_segment(pt, seg):
+        (x0, y0), (x1, y1) = seg
+        x, y = pt
+        cross = (x1 - x0) * (y - y0) - (y1 - y0) * (x - x0)
+        within = min(x0, x1) - 1e-3 <= x <= max(x0, x1) + 1e-3 and (
+            min(y0, y1) - 1e-3 <= y <= max(y0, y1) + 1e-3
+        )
+        return abs(cross) < 1e-3 and within
+
+    points = [p for seg in SEGS for p in seg] + list(PINS.values()) + [p for p, _ in LABELS]
+    for a, b in SEGS:
+        union(key(a), key(b))
+    for pt in points:
+        find(key(pt))
+        for seg in SEGS:
+            if on_segment(pt, seg):
+                union(key(pt), key(seg[0]))
+    names = {}
+    for pt, name in LABELS:  # same label name = same net
+        if name in names:
+            union(key(pt), names[name])
+        names[name] = key(pt)
+    groups = {}
+    for (ref, pin), pt in PINS.items():
+        groups.setdefault(find(key(pt)), set()).add((ref, "3" if pin == "3b" else pin))
+    labels = {}
+    for pt, name in LABELS:
+        labels.setdefault(find(key(pt)), set()).add(name)
+    return groups, labels
+
+
+def check_sheet():
+    """Compare the drawing's connectivity with dragonfly_netlist.py. Returns a list of errors."""
+    groups, labels = sheet_netlist()
+    errors = []
+    for names in labels.values():
+        if len(names) > 1:
+            errors.append(f"short between nets {sorted(names)}")
+    two_term = set(PASSIVES) - {"C1", "C2"}  # non-polar two-terminal parts: either way round
+    not_drawn = {("U3", "5"), ("U3", "6"), ("U3", "7")}  # U3B tie-off, stated in a sheet note
+
+    def canon(pins):
+        return sorted((r, "" if r in two_term else p) for r, p in pins if (r, p) not in not_drawn)
+
+    want = {n: canon((r, p) for r, p, *_ in c) for n, c in NETS.items()}
+    want = {n: v for n, v in want.items() if v}
+    got = [canon(pins) for pins in groups.values()]
+    for n, v in want.items():
+        if v not in got:
+            near = max(got, key=lambda g: len(set(g) & set(v)))
+            errors.append(f"net {n}: netlist {v} but sheet {near}")
+    for g in got:
+        if g not in want.values():
+            errors.append(f"sheet net {g} matches no netlist net")
+    for ref in ("C1", "C2"):  # polarity: + terminal (start) on the servo rail
+        g = next(k for k, v in groups.items() if (ref, "1") in v)
+        if "+5V_SERVO" not in labels.get(g, set()):
+            errors.append(f"{ref} drawn with + not on +5V_SERVO")
+    return errors
+
+
+SHEET_ERRORS = check_sheet()
+if SHEET_ERRORS:
+    raise SystemExit("Sheet does not match the netlist:\n  " + "\n  ".join(SHEET_ERRORS))
+print(f"Sheet matches the netlist: {len(PINS)} pin connections in {len(NETS)} nets.")
 
 # ---------------------------------------------------------------- TITLE BLOCK
 tbx0, tby0, tbx1, tby1 = 118, 4, 164, 29
@@ -739,7 +881,7 @@ cell(119.5, 12.0, "DRAWN BY", "A. Kirkman")
 cell(142.5, 12.0, "DATE", "2026-11-27")
 cell(119.5, 7.8, "FILE", "dragonfly_schematic.py", size=6.4)
 cell(142.5, 7.8, "SIZE", "A3")
-cell(154.5, 7.8, "REV", "A")
+cell(154.5, 7.8, "REV", "B")
 cell(119.5, 4.4, "CHECKED", "dragonfly_netlist.py ERC", size=6.4)
 cell(142.5, 4.4, "SCALE", "NTS")
 cell(154.5, 4.4, "SHEET", "1 of 1")

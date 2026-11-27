@@ -7,8 +7,10 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
+import taskbot.bot as bot_module
 from taskbot.bot import HELP_TEXT, TaskBot, task_details
 from taskbot.config import Settings
 from taskbot.digest import gate_heads_up
@@ -18,6 +20,26 @@ from taskbot.store import SheetStore
 from .test_layout import book
 
 ANA, BEN, CY, STRANGER = 1001, 1002, 1003, 1999
+
+# The bot's today() is faked to 21 Nov below. The Undo button stamps the wall-clock time
+# and undo works out the sign-off date from it, so the wall clock must say 21 Nov too,
+# or the undo tests only pass when they happen to run on 21 Nov.
+SIGN_OFF_AT = int(datetime(2026, 11, 21, 12, 0, tzinfo=ZoneInfo("Europe/Paris")).timestamp())
+
+
+class FrozenClock:
+    """Stands in for the `time` module inside taskbot.bot."""
+
+    monotonic = staticmethod(time.monotonic)
+
+    @staticmethod
+    def time():
+        return float(SIGN_OFF_AT)
+
+
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch):
+    monkeypatch.setattr(bot_module, "clock", FrozenClock)
 
 
 @dataclass
@@ -173,7 +195,7 @@ def test_undo_never_clears_a_date_someone_else_typed():
     bot, b = make_bot()
     run(bot.sign_off("X05", User(ANA)))
     row_of(b, "X05")[14] = "2026-11-25"  # someone corrects the completion date by hand
-    at = int(time.time())
+    at = SIGN_OFF_AT
     run(bot.undo_sign_off("X05", User(ANA), 0, at))
     assert row_of(b, "X05")[14] == "2026-11-25"
 
@@ -182,7 +204,7 @@ def test_undo_refuses_when_the_task_moved_on():
     bot, b = make_bot()
     run(bot.sign_off("X05", User(ANA)))
     row_of(b, "X05")[9] = "In progress"
-    message = run(bot.undo_sign_off("X05", User(ANA), 0, int(time.time())))
+    message = run(bot.undo_sign_off("X05", User(ANA), 0, SIGN_OFF_AT))
     assert "nothing to undo" in message and row_of(b, "X05")[9] == "In progress"
 
 
